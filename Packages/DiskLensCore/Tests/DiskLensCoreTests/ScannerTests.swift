@@ -10,7 +10,7 @@ struct ScannerTests {
         t.file("a.txt", bytes: 10_000)
         t.file("b.txt", bytes: 20_000)
 
-        let result = try Scanner().scan(ScanOptions(root: t.root))
+        let result = try DiskScanner().scan(ScanOptions(root: t.root))
         let root = result.tree.root
 
         #expect(root.isDirectory)
@@ -31,7 +31,7 @@ struct ScannerTests {
         t.file("sub/c.bin", bytes: 30_000)
         t.file("top.bin", bytes: 5_000)
 
-        let root = try Scanner().scan(ScanOptions(root: t.root)).tree.root
+        let root = try DiskScanner().scan(ScanOptions(root: t.root)).tree.root
         let sub = try #require(root.child("sub"))
         #expect(sub.child("c.bin")?.logicalSize == 30_000)
         #expect(sub.fileCount == 1)
@@ -45,7 +45,7 @@ struct ScannerTests {
         let orig = t.file("orig.bin", bytes: 50_000)
         t.hardlink("dup.bin", to: orig)
 
-        let result = try Scanner().scan(ScanOptions(root: t.root))
+        let result = try DiskScanner().scan(ScanOptions(root: t.root))
         let root = result.tree.root
 
         #expect(root.fileCount == 2)
@@ -65,7 +65,7 @@ struct ScannerTests {
         t.file("real/big.bin", bytes: 40_000)
         t.symlink("link", to: realDir)
 
-        let result = try Scanner().scan(ScanOptions(root: t.root))
+        let result = try DiskScanner().scan(ScanOptions(root: t.root))
         let root = result.tree.root
         let link = try #require(root.child("link"))
 
@@ -82,7 +82,7 @@ struct ScannerTests {
 
         // Threshold above one allocation block so the 8-byte files (which still
         // occupy a 4 KB block on disk) fall under it, but big.bin does not.
-        let root = try Scanner().scan(ScanOptions(root: t.root, minRetainedSize: 16_384)).tree.root
+        let root = try DiskScanner().scan(ScanOptions(root: t.root, minRetainedSize: 16_384)).tree.root
 
         #expect(root.child("big.bin") != nil)
         for i in 0..<5 { #expect(root.child("tiny\(i).txt") == nil) }
@@ -98,7 +98,7 @@ struct ScannerTests {
         t.file("skip/b.bin", bytes: 10_000)
 
         let opts = ScanOptions(root: t.root, excludePaths: [t.root.appending(path: "skip")])
-        let root = try Scanner().scan(opts).tree.root
+        let root = try DiskScanner().scan(opts).tree.root
 
         #expect(root.child("keep") != nil)
         #expect(root.child("skip") == nil)
@@ -110,7 +110,7 @@ struct ScannerTests {
         let t = TempTree()
         t.file("Foo.app/Contents/MacOS/bin", bytes: 50_000)
 
-        let collapsed = try Scanner().scan(
+        let collapsed = try DiskScanner().scan(
             ScanOptions(root: t.root, treatPackagesAsFiles: true)).tree.root
         let app = try #require(collapsed.child("Foo.app"))
         #expect(app.flags.contains(.package))
@@ -118,7 +118,7 @@ struct ScannerTests {
         #expect(app.sizeOnDisk >= 50_000)
         #expect(app.fileCount == 1)
 
-        let expanded = try Scanner().scan(
+        let expanded = try DiskScanner().scan(
             ScanOptions(root: t.root, treatPackagesAsFiles: false)).tree.root
         #expect(expanded.child("Foo.app")?.children.isEmpty == false)
     }
@@ -130,7 +130,7 @@ struct ScannerTests {
         let token = ScanCancellation()
         token.cancel()
         #expect(throws: CancellationError.self) {
-            _ = try Scanner().scan(ScanOptions(root: t.root), cancellation: token)
+            _ = try DiskScanner().scan(ScanOptions(root: t.root), cancellation: token)
         }
     }
 
@@ -140,7 +140,7 @@ struct ScannerTests {
         for i in 0..<20 { t.file("f\(i).bin", bytes: 1000) }
 
         let collector = ProgressCollector()
-        let result = try Scanner(progressInterval: 4).scan(
+        let result = try DiskScanner(progressInterval: 4).scan(
             ScanOptions(root: t.root), progress: { collector.record($0) })
 
         #expect(!collector.events.isEmpty)
@@ -155,7 +155,7 @@ struct ScannerTests {
         t.file("nested/b.bin", bytes: 7_777)
         t.file("nested/deep/c.bin", bytes: 1_000_000)
 
-        let root = try Scanner().scan(ScanOptions(root: t.root)).tree.root
+        let root = try DiskScanner().scan(ScanOptions(root: t.root)).tree.root
         #expect(root.sizeOnDisk == t.duBytes())
     }
 }

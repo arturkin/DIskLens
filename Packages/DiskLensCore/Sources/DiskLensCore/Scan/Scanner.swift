@@ -19,7 +19,7 @@ public enum ScanError: Error {
 /// Size accounting uses allocated blocks (`st_blocks * 512`, matching `du`):
 /// hard links are counted once, symlinks are not followed, and scanning stops
 /// at volume boundaries unless `crossMountPoints` is set.
-public struct Scanner: Sendable {
+public struct DiskScanner: Sendable {
     public struct Result: Sendable {
         public let tree: FileTree
         public let stats: ScanStats
