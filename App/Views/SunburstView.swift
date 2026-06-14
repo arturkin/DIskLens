@@ -44,6 +44,8 @@ struct SunburstView: View {
     var onSelect: (FileNode) -> Void
     var onBack: () -> Void
 
+    @State private var hover: ChartHoverHit?
+
     var body: some View {
         GeometryReader { geo in
             let segments = SunburstLayout.segments(focus: focus, maxDepth: maxDepth)
@@ -57,10 +59,16 @@ struct SunburstView: View {
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
-                case .active(let p): onHover(g.hitTest(p, segments: segments)?.node)
-                case .ended: onHover(nil)
+                case .active(let p):
+                    let node = g.hitTest(p, segments: segments)?.node
+                    onHover(node)
+                    hover = node.map { ChartHoverHit(node: $0, point: p) }
+                case .ended:
+                    onHover(nil)
+                    hover = nil
                 }
             }
+            .chartTooltip(hover, bounds: geo.size, focus: focus)
             .gesture(
                 SpatialTapGesture()
                     .onEnded { value in handleTap(value.location, segments: segments, g: g) }

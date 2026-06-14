@@ -17,8 +17,14 @@ Feature-complete **v1**. Milestones M1–M8 are all done and committed.
   engine, sunburst/treemap/icicle layouts, node locator. **47 unit tests, green.**
 - **App** (SwiftUI): sidebar with scan buttons + run history, 6 switchable charts
   (sunburst, pie, treemap, icicle, list/table, bar), drill/breadcrumb/hover,
-  cleanup (reveal / collect into a bag / move to Trash), compare/diff with
-  baseline picker + changes inspector + delta tinting, settings, FDA banner.
+  a cursor-following **hover tooltip** on every interactive chart (sunburst/pie/treemap/icicle/bar —
+  `ChartTooltip.swift`; the list view shows columns), a **zoom in/out transition** when changing
+  focus (`ChartContent` re-`id`s on `focus` + `.transition`; nav methods wrap the change in
+  `withAnimation`), a **Back button + ⌘[** in the breadcrumb bar (plus clickable crumbs and the
+  sunburst centre-hole), cleanup (reveal / collect into a bag / move to Trash), compare/diff with
+  baseline picker + changes inspector + delta tinting, settings, FDA banner, and a
+  **System/Light/Dark appearance** picker (`AppAppearance`, ships **Dark** by default, applied via
+  `.preferredColorScheme` on the main + settings windows).
 - **Helper** (`disklens-helper`): embedded CLI, run as root for admin scans via
   on-demand `osascript` auth. **Scans only — it has no delete capability.**
 - Builds clean (`xcodebuild -scheme DiskLens`), unsigned is fine for personal use.
@@ -80,6 +86,30 @@ accounting unchanged.
   frontier of directories until there are ≥ ~cores units, then parallelize that) is the next step
   if whole-disk needs to be faster. Hard-link size *attribution* between two links is now
   nondeterministic (whichever subtree is scanned first counts it) — totals stay exact.
+- **Progressive rendering (live preview):** `DiskScanner.scan(…, partial:)` streams each top-level
+  subtree to the caller **as it finishes** (from the parallel workers — thread-safe required;
+  `progressivePartials` test covers it). `AppModel` builds a synthetic live root from the children
+  received so far (`beginLivePreview`/`appendLiveChild`/`presentLiveRoot`) so the chart fills in
+  mid-scan instead of freezing on stale data; the top strip + a centered spinner show progress, and
+  `finishScan` swaps in the authoritative tree. A `scanGen` fence + `stash`/`endLivePreview` make
+  late callbacks no-op and restore the prior view on cancel/fail. *Granularity is top-level only*,
+  so the dominant subtree still lands in one chunk near the end (same Amdahl seam as above);
+  loose root-level files appear only when the final tree arrives. Admin scans don't stream (the
+  helper returns the whole tree at once), so they keep the previous run visible + spinner.
+
+## App icon (done)
+
+A generated sunburst icon lives in `App/Assets.xcassets/AppIcon.appiconset` (all 10 macOS
+slots). It's rendered by `scripts/make-icon.swift` (CoreGraphics, on a macOS rounded-rect body,
+reusing the `ChartPalette` hues so it matches the live charts) and downscaled by
+`scripts/make-icon.sh`. To tweak the look, edit the renderer and rerun `./scripts/make-icon.sh`
+(no `xcodegen` needed — the catalog is already in the project). The `.appiconset/Contents.json`
+is hand-maintained.
+
+**If the Dock/Finder shows a generic icon** after a build, the bundle is fine — it's the macOS
+icon cache. Re-register and bounce the Dock, then fully relaunch the app:
+`lsregister -f <DiskLens.app>` (full path:
+`…/LaunchServices.framework/Versions/A/Support/lsregister`) then `killall Dock`.
 
 ## Invariants — don't regress these (they were bugs once)
 
@@ -123,18 +153,15 @@ accounting unchanged.
 ## Backlog / follow-ups (roughly prioritized)
 
 **Worth doing next**
-1. **App icon** — add an `Assets.xcassets` AppIcon set (currently generic).
-2. **Persistent helper (`SMAppService`)** — Developer-ID signed daemon implementing
+1. **Persistent helper (`SMAppService`)** — Developer-ID signed daemon implementing
    `ElevationService`; removes the per-scan password prompt and unlocks scheduled
    background scans. The protocol seam is already in place.
-3. **Quick Look** — wire spacebar preview on the hovered/selected node.
+2. **Quick Look** — wire spacebar preview on the hovered/selected node.
 
 **Nice to have / polish**
 4. **Compare tint on list & bar** — currently sunburst/pie/treemap/icicle tint in
    compare mode; list and bar don't (no natural per-node color surface).
-5. **Bar view cleanup actions** — bar has no context menu and no hover tracking, so
-   reveal/collect/trash are unreachable from it. Would need hover plumbing.
-6. **Bar "+N more" indicator** — bar silently shows only the top 24 children.
+5. **Bar "+N more" indicator** — bar silently shows only the top 24 children.
 7. **Bar axis label** — the "Zero kB" tick reads oddly.
 
 **Edge cases (low value, documented)**

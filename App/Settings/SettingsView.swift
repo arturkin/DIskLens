@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(PrefKey.maxRuns) private var maxRuns = 10
     @AppStorage(PrefKey.autoRescanOnLaunch) private var autoRescanOnLaunch = false
     @AppStorage(PrefKey.useBinaryUnits) private var useBinaryUnits = false
+    @AppStorage(PrefKey.appearance) private var appearance = AppAppearance.dark.rawValue
 
     var body: some View {
         Form {
@@ -30,6 +31,9 @@ struct SettingsView: View {
             }
 
             Section("Display") {
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0.rawValue) }
+                }
                 Picker("Size units", selection: $useBinaryUnits) {
                     Text("Decimal (GB, like Finder)").tag(false)
                     Text("Binary (GiB)").tag(true)
@@ -37,6 +41,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 420)
+        .frame(width: 460, height: 460)
+        .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
     }
 }

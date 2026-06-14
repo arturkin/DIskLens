@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import DiskLensCore
 
 /// UserDefaults keys and helpers shared by SettingsView (`@AppStorage`) and the
@@ -10,6 +11,31 @@ enum PrefKey {
     static let maxRuns = "maxRuns"
     static let autoRescanOnLaunch = "autoRescanOnLaunch"
     static let useBinaryUnits = "useBinaryUnits"
+    static let appearance = "appearance"
+}
+
+/// App-wide appearance override. `system` follows macOS; the app ships dark.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        }
+    }
+
+    /// `nil` => follow the system setting.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
 }
 
 enum Preferences {
@@ -21,6 +47,7 @@ enum Preferences {
             PrefKey.maxRuns: 10,
             PrefKey.autoRescanOnLaunch: false,
             PrefKey.useBinaryUnits: false,
+            PrefKey.appearance: AppAppearance.dark.rawValue,
         ])
     }
 

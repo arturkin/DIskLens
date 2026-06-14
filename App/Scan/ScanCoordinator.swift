@@ -7,10 +7,12 @@ enum ScanCoordinator {
     static func run(
         _ options: ScanOptions,
         cancellation: ScanCancellation,
-        progress: @escaping @Sendable (ScanProgress) -> Void
+        progress: @escaping @Sendable (ScanProgress) -> Void,
+        partial: (@Sendable (FileNode) -> Void)? = nil
     ) async throws -> DiskScanner.Result {
         try await Task.detached(priority: .userInitiated) {
-            try DiskScanner().scan(options, cancellation: cancellation, progress: progress)
+            try DiskScanner().scan(
+                options, cancellation: cancellation, progress: progress, partial: partial)
         }.value
     }
 }

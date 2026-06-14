@@ -6,7 +6,10 @@ import DiskLensCore
 /// drill into a directory.
 struct BarView: View {
     let focus: FileNode
+    var onHover: (FileNode?) -> Void = { _ in }
     var onSelect: (FileNode) -> Void
+
+    @State private var hover: ChartHoverHit?
 
     private struct Datum: Identifiable {
         let id: ObjectIdentifier
@@ -54,16 +57,33 @@ struct BarView: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 Rectangle().fill(.clear).contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let p):
+                            let node = barNode(at: p, proxy: proxy, geo: geo, items: items)
+                            onHover(node)
+                            hover = node.map { ChartHoverHit(node: $0, point: p) }
+                        case .ended:
+                            onHover(nil)
+                            hover = nil
+                        }
+                    }
                     .gesture(SpatialTapGesture().onEnded { value in
-                        guard let plotFrame = proxy.plotFrame else { return }
-                        let y = value.location.y - geo[plotFrame].origin.y
-                        if let name: String = proxy.value(atY: y),
-                           let hit = items.first(where: { $0.name == name }) {
-                            onSelect(hit.node)
+                        if let node = barNode(at: value.location, proxy: proxy, geo: geo, items: items) {
+                            onSelect(node)
                         }
                     })
+                    .chartTooltip(hover, bounds: geo.size, focus: focus)
             }
         }
         .padding(.trailing, 48)
+    }
+
+    /// The node whose bar row sits under `point` (maps the y position back to a category).
+    private func barNode(at point: CGPoint, proxy: ChartProxy, geo: GeometryProxy, items: [Datum]) -> FileNode? {
+        guard let plotFrame = proxy.plotFrame else { return nil }
+        let y = point.y - geo[plotFrame].origin.y
+        guard let name: String = proxy.value(atY: y) else { return nil }
+        return items.first(where: { $0.name == name })?.node
     }
 }

@@ -10,6 +10,8 @@ struct IcicleView: View {
     var onHover: (FileNode?) -> Void
     var onSelect: (FileNode) -> Void
 
+    @State private var hover: ChartHoverHit?
+
     var body: some View {
         GeometryReader { geo in
             let tiles = IcicleLayout.tiles(focus: focus)
@@ -44,10 +46,16 @@ struct IcicleView: View {
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
-                case .active(let p): onHover(hitTest(p, tiles, bandH: bandH, width: W)?.node)
-                case .ended: onHover(nil)
+                case .active(let p):
+                    let node = hitTest(p, tiles, bandH: bandH, width: W)?.node
+                    onHover(node)
+                    hover = node.map { ChartHoverHit(node: $0, point: p) }
+                case .ended:
+                    onHover(nil)
+                    hover = nil
                 }
             }
+            .chartTooltip(hover, bounds: geo.size, focus: focus)
             .gesture(SpatialTapGesture().onEnded { value in
                 if let node = hitTest(value.location, tiles, bandH: bandH, width: W)?.node {
                     onSelect(node)

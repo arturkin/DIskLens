@@ -71,3 +71,12 @@ final class ProgressCollector: @unchecked Sendable {
     func record(_ p: ScanProgress) { events.append(p) }
     var last: ScanProgress? { events.last }
 }
+
+/// Thread-safe collector for the scanner's `partial` callback, which fires from
+/// the parallel subtree workers.
+final class NodeCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [FileNode] = []
+    func add(_ node: FileNode) { lock.withLock { storage.append(node) } }
+    var nodes: [FileNode] { lock.withLock { storage } }
+}

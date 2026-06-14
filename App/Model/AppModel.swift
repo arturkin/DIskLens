@@ -118,20 +118,20 @@ final class AppModel {
 
     func drill(into node: FileNode) {
         guard node.isDirectory, !node.children.isEmpty else { return }
-        focusPath.append(node)
         hovered = nil
+        withAnimation(.easeInOut(duration: 0.28)) { focusPath.append(node) }
     }
 
     func focus(toDepth index: Int) {
-        guard index >= 0, index < focusPath.count else { return }
-        focusPath = Array(focusPath.prefix(index + 1))
+        guard index >= 0, index < focusPath.count, index != focusPath.count - 1 else { return }
         hovered = nil
+        withAnimation(.easeInOut(duration: 0.28)) { focusPath = Array(focusPath.prefix(index + 1)) }
     }
 
     func goUp() {
         guard canGoUp else { return }
-        focusPath.removeLast()
         hovered = nil
+        withAnimation(.easeInOut(duration: 0.28)) { focusPath.removeLast() }
     }
 
     // MARK: Scanning
@@ -167,22 +167,99 @@ final class AppModel {
         } else {
             let token = ScanCancellation()
             cancellation = token
+            // Switch the main view to a live preview that fills in as each
+            // top-level subtree lands, so the chart is usable mid-scan instead of
+            // frozen on stale data. `gen` fences out late callbacks from a scan
+            // that has since finished, been cancelled, or been superseded.
+            let gen = beginLivePreview(root: root)
             Task {
                 do {
-                    let result = try await ScanCoordinator.run(options, cancellation: token) { progress in
-                        Task { @MainActor [weak self] in
-                            guard let self, self.isScanning else { return }
-                            self.phase = .scanning(progress)
-                        }
-                    }
+                    let result = try await ScanCoordinator.run(
+                        options, cancellation: token,
+                        progress: { progress in
+                            Task { @MainActor [weak self] in
+                                guard let self, self.scanGen == gen, self.isScanning else { return }
+                                self.phase = .scanning(progress)
+                            }
+                        },
+                        partial: { node in
+                            Task { @MainActor [weak self] in
+                                guard let self, self.scanGen == gen, self.isScanning else { return }
+                                self.appendLiveChild(node)
+                            }
+                        })
                     finishScan(tree: result.tree, stats: result.stats, root: root, mode: .user, started: started)
                 } catch is CancellationError {
+                    endLivePreview()
                     phase = .idle
                 } catch {
+                    endLivePreview()
                     phase = .failed(error.localizedDescription)
                 }
             }
         }
+    }
+
+    // MARK: Live progressive preview (user scans)
+
+    /// Generation of the in-flight scan; bumped per `startScan` so stale async
+    /// callbacks can no-op.
+    private var scanGen = 0
+    /// Top-level subtrees received so far during the live preview.
+    private var liveChildren: [FileNode] = []
+    private var liveRootName = ""
+    private var liveScannedRoot = ""
+    /// What was on screen before the scan, restored if it is cancelled or fails.
+    private var stash: (tree: FileTree?, focus: [FileNode], bag: [CollectedItem])?
+
+    /// Begins a scan's live preview: stashes the current view, then shows an empty
+    /// root that `appendLiveChild` grows. Returns the new scan generation.
+    private func beginLivePreview(root: URL) -> Int {
+        scanGen += 1
+        stash = (tree, focusPath, bag)
+        liveChildren = []
+        liveScannedRoot = root.standardizedFileURL.path
+        liveRootName = Self.rootName(for: root)
+        hovered = nil
+        diff = nil                       // palette-color the preview; real diff recomputes on finish
+        presentLiveRoot()
+        bag.removeAll()                  // identities belong to the stashed tree now
+        return scanGen
+    }
+
+    /// Folds a freshly-finished top-level subtree into the live preview.
+    private func appendLiveChild(_ node: FileNode) {
+        liveChildren.append(node)
+        presentLiveRoot()
+    }
+
+    /// Rebuilds the synthetic live root from `liveChildren` and shows it at the
+    /// root focus. Cheap (top-level children only); does not touch the bag/diff so
+    /// it can run on every subtree completion. Loose root-level files are absent
+    /// until the authoritative tree arrives in `finishScan`.
+    private func presentLiveRoot() {
+        let sorted = liveChildren.sorted { $0.sizeOnDisk > $1.sizeOnDisk }
+        var total: Int64 = 0, logical: Int64 = 0, files: Int32 = 0
+        for c in sorted { total += c.sizeOnDisk; logical += c.logicalSize; files += c.fileCount }
+        let live = FileNode(
+            name: liveRootName, isDirectory: true, sizeOnDisk: total,
+            logicalSize: logical, modified: nil, fileCount: files, flags: [], children: sorted)
+        tree = FileTree(root: live, scannedRoot: liveScannedRoot)
+        focusPath = [live]
+    }
+
+    /// Restores the stashed pre-scan view (used when a scan is cancelled or fails).
+    private func endLivePreview() {
+        liveChildren = []
+        guard let stash else {
+            tree = nil; focusPath = []; hovered = nil; diff = nil; return
+        }
+        tree = stash.tree
+        focusPath = stash.focus
+        bag = stash.bag
+        hovered = nil
+        self.stash = nil
+        refreshCompareForCurrentRun()
     }
 
     func cancelScan() {
@@ -350,6 +427,9 @@ final class AppModel {
         lastStats = stats
         reloadRuns()
         selectedRunID = meta.id
+        // The authoritative tree replaces the live preview; drop its scratch state.
+        stash = nil
+        liveChildren = []
         present(tree: tree)
         phase = .idle
     }
@@ -426,5 +506,14 @@ final class AppModel {
 
     private static func volumeName(for url: URL) -> String? {
         (try? url.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
+    }
+
+    /// Display name for a scanned root, matching the scanner's own root naming so
+    /// the live preview and the final tree share a breadcrumb label.
+    private static func rootName(for url: URL) -> String {
+        let path = url.standardizedFileURL.path
+        if path == "/" { return "/" }
+        let comp = (path as NSString).lastPathComponent
+        return comp.isEmpty ? path : comp
     }
 }

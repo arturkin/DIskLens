@@ -57,10 +57,17 @@ public struct DiskScanner: Sendable {
         self.forceLstatListing = ProcessInfo.processInfo.environment["DISKLENS_NO_BULK"] != nil
     }
 
+    /// Scans `options.root`.
+    ///
+    /// `partial`, if given, is called **once per top-level subtree as it finishes**
+    /// (from the parallel workers, so it must be thread-safe). It lets the UI render
+    /// the tree filling in while the scan is still running; the returned `Result` is
+    /// always the complete, authoritative tree.
     public func scan(
         _ options: ScanOptions,
         cancellation: ScanCancellation? = nil,
-        progress: (@Sendable (ScanProgress) -> Void)? = nil
+        progress: (@Sendable (ScanProgress) -> Void)? = nil,
+        partial: (@Sendable (FileNode) -> Void)? = nil
     ) throws -> Result {
         let rootPath = options.root.standardizedFileURL.path
         var st = stat()
@@ -111,7 +118,9 @@ public struct DiskScanner: Sendable {
                     let w = SubWalk(shared: shared)
                     let sd = subdirs[i]
                     if let node = try? w.buildSubtree(path: sd.path, name: sd.name, parentDev: dev) {
-                        nodes.p[i] = w.collapseIfPackage(node, name: sd.name)
+                        let finished = w.collapseIfPackage(node, name: sd.name)
+                        nodes.p[i] = finished
+                        partial?(finished)   // stream this subtree to the UI as it lands
                     }
                     stats.p[i] = w.stats
                 }

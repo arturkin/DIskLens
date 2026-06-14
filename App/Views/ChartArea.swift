@@ -22,6 +22,16 @@ struct ChartArea: View {
                 } else if !model.isScanning {
                     EmptyStateView()
                 }
+                // Before the first subtree lands the live chart is empty — show a
+                // spinner so the main view reads as "working", not stalled.
+                if model.isScanning, model.focus?.children.isEmpty ?? true {
+                    VStack(spacing: 10) {
+                        ProgressView().controlSize(.large)
+                        Text("Scanning…").foregroundStyle(.secondary)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                }
                 if model.isLoadingRun {
                     VStack(spacing: 10) {
                         ProgressView().controlSize(.large)
@@ -88,6 +98,16 @@ struct ChartContent: View {
     }
 
     var body: some View {
+        // Re-identifying the chart on focus change lets the transition animate the
+        // zoom in/out. Navigation methods wrap the focus change in `withAnimation`;
+        // live-scan rebuilds don't, so they swap instantly (no flashing mid-scan).
+        chart
+            .id(ObjectIdentifier(focus))
+            .transition(.scale(scale: 0.92).combined(with: .opacity))
+    }
+
+    @ViewBuilder
+    private var chart: some View {
         switch model.vizKind {
         case .sunburst:
             SunburstView(
@@ -122,7 +142,12 @@ struct ChartContent: View {
         case .list:
             ListTableView(focus: focus)
         case .bar:
-            BarView(focus: focus, onSelect: { model.drill(into: $0) })
+            BarView(
+                focus: focus,
+                onHover: { model.hovered = $0 },
+                onSelect: { model.drill(into: $0) }
+            )
+            .contextMenu { ChartNodeMenu(node: model.hovered) }
         }
     }
 }
@@ -133,29 +158,49 @@ private struct BreadcrumbBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(Array(model.focusPath.enumerated()), id: \.offset) { index, node in
-                    if index > 0 {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Button {
-                        model.focus(toDepth: index)
-                    } label: {
-                        Text(node.name)
-                            .lineLimit(1)
-                            .fontWeight(index == model.focusPath.count - 1 ? .semibold : .regular)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(index == model.focusPath.count - 1 ? Color.primary : Color.accentColor)
-                }
-                Spacer(minLength: 0)
+        HStack(spacing: 8) {
+            Button {
+                model.goUp()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .fontWeight(.semibold)
+                    .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .buttonStyle(.borderless)
+            .disabled(!model.canGoUp)
+            .help("Back to enclosing folder (⌘[)")
+            .keyboardShortcut("[", modifiers: .command)
+
+            Divider().frame(height: 14)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(Array(model.focusPath.enumerated()), id: \.offset) { index, node in
+                        let isLast = index == model.focusPath.count - 1
+                        if index > 0 {
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Button {
+                            model.focus(toDepth: index)
+                        } label: {
+                            Text(node.name)
+                                .lineLimit(1)
+                                .fontWeight(isLast ? .semibold : .regular)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(isLast ? Color.primary : Color.accentColor)
+                        .disabled(isLast)   // clicking the current folder is a no-op
+                    }
+                }
+            }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 }
 
@@ -167,7 +212,7 @@ private struct StatusBar: View {
     var body: some View {
         HStack(spacing: 10) {
             if let node = model.hovered {
-                Image(systemName: icon(for: node))
+                Image(systemName: NodeIcon.symbol(for: node))
                     .foregroundStyle(.secondary)
                 Text(node.name).fontWeight(.medium).lineLimit(1)
                 Text(Format.bytes(node.sizeOnDisk)).foregroundStyle(.secondary)
@@ -192,13 +237,6 @@ private struct StatusBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .frame(height: 30)
-    }
-
-    private func icon(for node: FileNode) -> String {
-        if node.flags.contains(.package) { return "shippingbox" }
-        if node.flags.contains(.symlink) { return "arrow.up.right" }
-        if node.flags.contains(.aggregatedSmallFiles) { return "ellipsis.circle" }
-        return node.isDirectory ? "folder" : "doc"
     }
 }
 

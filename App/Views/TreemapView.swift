@@ -10,6 +10,8 @@ struct TreemapView: View {
     var onHover: (FileNode?) -> Void
     var onSelect: (FileNode) -> Void
 
+    @State private var hover: ChartHoverHit?
+
     var body: some View {
         GeometryReader { geo in
             let bounds = TreemapRect(x: 0, y: 0, width: geo.size.width, height: geo.size.height)
@@ -40,10 +42,16 @@ struct TreemapView: View {
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
-                case .active(let p): onHover(hitTest(p, tiles)?.node)
-                case .ended: onHover(nil)
+                case .active(let p):
+                    let node = hitTest(p, tiles)?.node
+                    onHover(node)
+                    hover = node.map { ChartHoverHit(node: $0, point: p) }
+                case .ended:
+                    onHover(nil)
+                    hover = nil
                 }
             }
+            .chartTooltip(hover, bounds: geo.size, focus: focus)
             .gesture(SpatialTapGesture().onEnded { value in
                 if let node = hitTest(value.location, tiles)?.node { onSelect(node) }
             })

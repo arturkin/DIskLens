@@ -70,6 +70,10 @@ project.yml                   XcodeGen spec — the single source of truth for t
   `ImageRenderer` (no Screen Recording permission needed). **`Table`-based views (list, changes
   inspector) can't be captured by `ImageRenderer`** — they render only in the live window.
 - TDD for everything in `DiskLensCore`: write the failing test first (`swift test`), then implement.
+- **App icon** is a generated sunburst (`App/Assets.xcassets/AppIcon.appiconset`). It's rendered
+  by `scripts/make-icon.swift` (CoreGraphics, reuses the `ChartPalette` hues) and downscaled to all
+  macOS sizes by `scripts/make-icon.sh` — edit the renderer and rerun the script to change it; the
+  `.appiconset` `Contents.json` is hand-maintained.
 
 ## Build & test
 
@@ -82,7 +86,6 @@ open DiskLens.xcodeproj                              # or just open it
 
 ## Known follow-ups
 
-- No app icon yet (generic). Add an `Assets.xcassets` AppIcon set.
 - Admin elevation re-prompts each scan; a persistent `SMAppService` helper (Developer-ID signed)
   would remove the prompt and enable scheduled background scans.
 - Quick Look (spacebar preview) isn't wired yet.

@@ -3,6 +3,7 @@ import DiskLensCore
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(PrefKey.appearance) private var appearance = AppAppearance.dark.rawValue
 
     var body: some View {
         @Bindable var model = model
@@ -15,6 +16,7 @@ struct ContentView: View {
                         .inspectorColumnWidth(min: 240, ideal: 300, max: 420)
                 }
         }
+        .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         .navigationTitle("DiskLens")
         .navigationSubtitle(subtitle)
         .toolbar {

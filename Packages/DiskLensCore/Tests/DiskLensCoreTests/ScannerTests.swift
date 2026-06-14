@@ -201,6 +201,30 @@ struct ScannerTests {
         #expect(result.stats.filesScanned == 20)
     }
 
+    @Test("emits each top-level subtree through the partial callback as it completes")
+    func progressivePartials() throws {
+        let t = TempTree()
+        t.file("alpha/a.bin", bytes: 40_000)
+        t.file("beta/b.bin", bytes: 30_000)
+        t.file("gamma/deep/c.bin", bytes: 20_000)
+        t.file("loose.bin", bytes: 5_000)   // a root-level file is not a parallel unit
+
+        let collector = NodeCollector()
+        let result = try DiskScanner().scan(
+            ScanOptions(root: t.root), partial: { collector.add($0) })
+
+        // Exactly one partial per top-level subdirectory (the parallel units).
+        #expect(Set(collector.nodes.map(\.name)) == ["alpha", "beta", "gamma"])
+        #expect(collector.nodes.count == 3)
+        // Each partial equals its corresponding final child.
+        for node in collector.nodes {
+            #expect(node.isDirectory)
+            let finalChild = try #require(result.tree.root.child(node.name))
+            #expect(node.sizeOnDisk == finalChild.sizeOnDisk)
+            #expect(node.fileCount == finalChild.fileCount)
+        }
+    }
+
     @Test("total disk size matches du -s for the same tree")
     func matchesDu() throws {
         let t = TempTree()
