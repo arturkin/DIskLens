@@ -31,7 +31,15 @@ struct Sidebar: View {
                         .font(.callout)
                 }
                 ForEach(model.runs) { run in
-                    RunRow(run: run).tag(run.id)
+                    RunRow(run: run)
+                        .tag(run.id)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                model.deleteRun(run.id)
+                            } label: {
+                                Label("Delete Scan", systemImage: "trash")
+                            }
+                        }
                 }
             }
         }

@@ -4,7 +4,9 @@ import Foundation
 /// tree blob per run. Enforces a retention cap.
 ///
 /// `baseDir` is injectable so tests can run against a temporary directory.
-public final class RunStore {
+/// `@unchecked Sendable`: file I/O is stateless and safe to call from any task;
+/// `maxRuns` is only ever mutated on the main actor.
+public final class RunStore: @unchecked Sendable {
     public enum StoreError: Error {
         case runNotFound(UUID)
     }

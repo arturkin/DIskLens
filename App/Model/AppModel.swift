@@ -25,6 +25,7 @@ final class AppModel {
 
     var phase: ScanPhase = .idle
     var lastStats: ScanStats?
+    var isLoadingRun = false
 
     /// View preferences shared across charts (filled out in later milestones).
     var vizKind: VizKind = .sunburst
@@ -47,9 +48,14 @@ final class AppModel {
     // MARK: Lifecycle
 
     func bootstrap() {
+        store.maxRuns = Preferences.maxRuns
         reloadRuns()
         if let mostRecent = runs.first {
             select(runID: mostRecent.id)
+            if Preferences.autoRescanOnLaunch {
+                startScan(root: URL(filePath: mostRecent.scannedRoot),
+                          mode: mostRecent.mode == .admin ? .admin : .user)
+            }
         }
     }
 
@@ -57,11 +63,35 @@ final class AppModel {
         runs = (try? store.loadIndex()) ?? []
     }
 
+    /// Loads a run's tree off the main actor (large blobs take seconds to decode).
     func select(runID: UUID) {
-        guard let tree = try? store.loadTree(id: runID) else { return }
         selectedRunID = runID
         lastStats = nil
-        present(tree: tree)
+        isLoadingRun = true
+        let store = self.store
+        Task {
+            let tree = await Task.detached { try? store.loadTree(id: runID) }.value
+            guard selectedRunID == runID else { return }   // superseded by another selection
+            isLoadingRun = false
+            if let tree { present(tree: tree) }
+        }
+    }
+
+    func deleteRun(_ id: UUID) {
+        try? store.deleteRun(id: id)
+        let wasSelected = selectedRunID == id
+        reloadRuns()
+        if wasSelected {
+            if let next = runs.first {
+                select(runID: next.id)
+            } else {
+                tree = nil
+                focusPath = []
+                selectedRunID = nil
+                hovered = nil
+                diff = nil
+            }
+        }
     }
 
     private func present(tree: FileTree) {
@@ -99,7 +129,7 @@ final class AppModel {
 
     func startScan(root: URL, mode: ScanMode = .user) {
         guard !isScanning else { return }
-        let options = ScanOptions(root: root)
+        let options = Preferences.scanOptions(root: root)
         phase = .scanning(ScanProgress())
         let started = Date()
 
@@ -269,7 +299,16 @@ final class AppModel {
         }
     }
 
+    /// Synchronous tree load, used only by the headless snapshot mode.
+    func loadSynchronouslyForSnapshot(runID: UUID) {
+        if let tree = try? store.loadTree(id: runID) {
+            selectedRunID = runID
+            present(tree: tree)
+        }
+    }
+
     private func finishScan(tree: FileTree, stats: ScanStats?, root: URL, mode: ScanMode, started: Date) {
+        store.maxRuns = Preferences.maxRuns
         let meta = RunMetadata(
             date: Date(),
             scannedRoot: tree.scannedRoot,

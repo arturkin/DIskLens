@@ -4,6 +4,10 @@ import SwiftUI
 struct DiskLensApp: App {
     @State private var model = AppModel()
 
+    init() {
+        Preferences.registerDefaults()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -25,6 +29,10 @@ struct DiskLensApp: App {
                 .keyboardShortcut("r")
                 .disabled(model.isScanning)
             }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 }

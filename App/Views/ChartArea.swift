@@ -17,6 +17,14 @@ struct ChartArea: View {
             if model.isScanning {
                 ScanProgressOverlay()
             }
+            if model.isLoadingRun {
+                VStack(spacing: 10) {
+                    ProgressView().controlSize(.large)
+                    Text("Loading scan…").foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            }
             if case .failed(let message) = model.phase {
                 ErrorOverlay(message: message)
             }
@@ -37,6 +45,10 @@ struct ChartArea: View {
     @ViewBuilder
     private var content: some View {
         VStack(spacing: 0) {
+            if let stats = model.lastStats, stats.permissionDenied > 50 {
+                FDABanner(count: stats.permissionDenied)
+                Divider()
+            }
             if model.isComparing {
                 CompareSummaryBar()
                 Divider()

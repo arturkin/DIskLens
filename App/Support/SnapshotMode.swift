@@ -19,7 +19,9 @@ enum SnapshotMode {
         var log = ""
 
         let model = AppModel()
-        model.bootstrap()
+        if let mostRecent = (try? RunStore().loadIndex())?.first {
+            model.loadSynchronouslyForSnapshot(runID: mostRecent.id)
+        }
         let size = CGSize(width: 1000, height: 760)
 
         log += "focus=\(model.focus?.name ?? "nil") children=\(model.focus?.children.count ?? -1)\n"
