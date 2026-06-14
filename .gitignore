@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Xcode / SwiftPM
+*.xcodeproj/
+!project.yml
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+
+# Generated project + plists (regenerate with `xcodegen generate`)
+DiskLens.xcodeproj
+App/Info.plist
+App/DiskLens.entitlements
+
+# Local config / secrets
+*.local.xcconfig
