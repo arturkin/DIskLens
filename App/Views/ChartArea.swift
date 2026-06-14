@@ -219,7 +219,11 @@ private struct ScanProgressOverlay: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 420)
             }
-            Button("Cancel", role: .cancel) { model.cancelScan() }
+            if model.canCancelScan {
+                Button("Cancel", role: .cancel) { model.cancelScan() }
+            } else {
+                Text("Authenticating…").font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(28)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))

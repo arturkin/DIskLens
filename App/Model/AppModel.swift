@@ -30,6 +30,7 @@ final class AppModel {
     var vizKind: VizKind = .sunburst
 
     private var cancellation: ScanCancellation?
+    private let elevation: ElevationService = OnDemandElevationService()
 
     init(store: RunStore = RunStore()) {
         self.store = store
@@ -92,27 +93,51 @@ final class AppModel {
 
     // MARK: Scanning
 
+    /// Whether the in-flight scan can be cancelled (user scans only; the admin
+    /// scan runs in a separate root process we can't interrupt).
+    var canCancelScan: Bool { isScanning && cancellation != nil }
+
     func startScan(root: URL, mode: ScanMode = .user) {
         guard !isScanning else { return }
         let options = ScanOptions(root: root)
-        let token = ScanCancellation()
-        cancellation = token
         phase = .scanning(ScanProgress())
         let started = Date()
 
-        Task {
-            do {
-                let result = try await ScanCoordinator.run(options, cancellation: token) { progress in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.isScanning else { return }
-                        self.phase = .scanning(progress)
+        if mode == .admin {
+            cancellation = nil
+            let elevation = self.elevation
+            Task {
+                do {
+                    let tree = try await elevation.runPrivilegedScan(options: options) { progress in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.isScanning else { return }
+                            self.phase = .scanning(progress)
+                        }
                     }
+                    finishScan(tree: tree, stats: nil, root: root, mode: .admin, started: started)
+                } catch let error as ElevationError {
+                    phase = (error == .cancelled) ? .idle : .failed(error.localizedDescription)
+                } catch {
+                    phase = .failed(error.localizedDescription)
                 }
-                finishScan(result, root: root, mode: mode, started: started)
-            } catch is CancellationError {
-                phase = .idle
-            } catch {
-                phase = .failed(error.localizedDescription)
+            }
+        } else {
+            let token = ScanCancellation()
+            cancellation = token
+            Task {
+                do {
+                    let result = try await ScanCoordinator.run(options, cancellation: token) { progress in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.isScanning else { return }
+                            self.phase = .scanning(progress)
+                        }
+                    }
+                    finishScan(tree: result.tree, stats: result.stats, root: root, mode: .user, started: started)
+                } catch is CancellationError {
+                    phase = .idle
+                } catch {
+                    phase = .failed(error.localizedDescription)
+                }
             }
         }
     }
@@ -244,22 +269,22 @@ final class AppModel {
         }
     }
 
-    private func finishScan(_ result: DiskScanner.Result, root: URL, mode: ScanMode, started: Date) {
+    private func finishScan(tree: FileTree, stats: ScanStats?, root: URL, mode: ScanMode, started: Date) {
         let meta = RunMetadata(
             date: Date(),
-            scannedRoot: result.tree.scannedRoot,
+            scannedRoot: tree.scannedRoot,
             mode: mode,
             volumeName: Self.volumeName(for: root),
-            totalSize: result.tree.root.sizeOnDisk,
-            fileCount: Int(result.tree.root.fileCount),
+            totalSize: tree.root.sizeOnDisk,
+            fileCount: Int(tree.root.fileCount),
             durationMs: Int(Date().timeIntervalSince(started) * 1000),
             appVersion: Self.appVersion
         )
-        try? store.save(tree: result.tree, metadata: meta)
-        lastStats = result.stats
+        try? store.save(tree: tree, metadata: meta)
+        lastStats = stats
         reloadRuns()
         selectedRunID = meta.id
-        present(tree: result.tree)
+        present(tree: tree)
         phase = .idle
     }
 

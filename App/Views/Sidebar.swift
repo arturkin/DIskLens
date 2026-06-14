@@ -17,6 +17,9 @@ struct Sidebar: View {
                 Button { model.startScan(root: URL(filePath: "/")) } label: {
                     Label("Whole Disk", systemImage: "internaldrive")
                 }
+                Button { model.startScan(root: URL(filePath: "/"), mode: .admin) } label: {
+                    Label("Whole Disk (Admin)…", systemImage: "lock.shield")
+                }
             }
             .buttonStyle(.plain)
             .disabled(model.isScanning)

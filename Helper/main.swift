@@ -24,6 +24,13 @@ func fail(_ message: String) -> Never {
     exit(2)
 }
 
+/// When running as root (admin scan), outputs are otherwise root-owned 0600 and
+/// unreadable by the launching user. Make them world-readable so the app can
+/// poll progress and read the result blob.
+func makeReadable(_ path: String) {
+    _ = chmod(path, 0o644)
+}
+
 /// Nonisolated so the `@Sendable` progress closure can capture its locals.
 func performScan(
     rootPath: String,
@@ -48,6 +55,7 @@ func performScan(
                 files: progress.filesScanned, bytes: progress.bytesScanned, path: progress.currentPath)
             if let data = try? JSONEncoder().encode(record) {
                 try? data.write(to: URL(filePath: progressPath), options: .atomic)
+                makeReadable(progressPath)
             }
         }
     } catch {
@@ -60,6 +68,7 @@ func performScan(
     if let outPath {
         do {
             try TreeCodec.encode(tree).write(to: URL(filePath: outPath), options: .atomic)
+            makeReadable(outPath)
         } catch {
             fail("could not write blob: \(error)")
         }
