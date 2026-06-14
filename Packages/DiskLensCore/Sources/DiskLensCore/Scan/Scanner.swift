@@ -9,6 +9,9 @@ public struct ScanStats: Sendable, Equatable {
     public var permissionDenied: Int = 0
     public var symlinks: Int = 0
     public var hardlinksDeduped: Int = 0
+    /// Directories skipped because their inode was already counted (APFS
+    /// firmlink / volume-group aliasing — see `openAndList`).
+    public var directoriesDeduped: Int = 0
 
     static func + (a: ScanStats, b: ScanStats) -> ScanStats {
         var r = a
@@ -17,6 +20,7 @@ public struct ScanStats: Sendable, Equatable {
         r.permissionDenied += b.permissionDenied
         r.symlinks += b.symlinks
         r.hardlinksDeduped += b.hardlinksDeduped
+        r.directoriesDeduped += b.directoriesDeduped
         return r
     }
 }
@@ -144,15 +148,18 @@ private struct Sink<T>: @unchecked Sendable { let p: UnsafeMutablePointer<T> }
 
 // MARK: - Shared state (one per scan, touched by every parallel subtree)
 
-private struct InodeKey: Hashable {
+struct InodeKey: Hashable {
     let dev: dev_t
     let ino: ino_t
 }
 
 /// State shared across the parallel subtree walks: the options, the global
-/// hard-link dedupe set, and the throttled progress accumulator. All mutable
+/// inode dedupe set, and the throttled progress accumulator. All mutable
 /// access is lock-guarded, so it is safe to hand to concurrent walkers.
-private final class SharedScanState: @unchecked Sendable {
+///
+/// `internal` (not `private`) so tests can drive two `SubWalk`s over one shared
+/// dedupe set — the in-process analog of two APFS firmlink paths to one inode.
+final class SharedScanState: @unchecked Sendable {
     let options: ScanOptions
     let excluded: Set<String>
     let cancellation: ScanCancellation?
@@ -210,7 +217,7 @@ private final class SharedScanState: @unchecked Sendable {
 // MARK: - Per-subtree walker
 
 /// One directory's children and running totals while it is scanned.
-private final class DirAcc {
+final class DirAcc {
     var children: [FileNode] = []
     var totalSize: Int64
     var totalLogical: Int64
@@ -227,7 +234,7 @@ private final class DirAcc {
 
 /// A directory opened for scanning: its own metadata, accumulated leaf children,
 /// and the subdirectories still to walk.
-private final class DirShell {
+final class DirShell {
     let name: String
     let dev: dev_t
     let ownMtime: Date?
@@ -242,7 +249,7 @@ private final class DirShell {
     }
 }
 
-private enum DirListing {
+enum DirListing {
     case terminal(FileNode)   // mount stub or unreadable dir — nothing to walk
     case open(DirShell)
 }
@@ -261,7 +268,9 @@ private struct RawEntry {
 /// Walks one subtree synchronously. Each parallel root-child gets its own
 /// instance (so `stats` need no locking); all instances share one
 /// `SharedScanState` for dedupe and progress.
-private final class SubWalk {
+///
+/// `internal` (not `private`) for testability — see `SharedScanState`.
+final class SubWalk {
     let shared: SharedScanState
     var stats = ScanStats()
     var bytesScanned: Int64 = 0   // for progress only
@@ -318,6 +327,21 @@ private final class SubWalk {
                     name: name, isDirectory: true, sizeOnDisk: ownSize, logicalSize: ownLogical,
                     modified: ownMtime, fileCount: 0, flags: [.mountPoint], children: []))
             }
+        }
+
+        // Dedupe directories by inode. On APFS volume groups, `st_dev` is shared
+        // across the System and Data volumes, so the mount check above never
+        // fires for firmlinks: the Data volume is reachable both directly
+        // (/System/Volumes/Data) and via firmlinks (/Users, /Applications, …),
+        // which resolve to the *same* directory inodes. Counting the first
+        // sighting and folding any later one to a zero-size alias keeps the total
+        // at the true on-disk usage instead of inflating it past the disk's size.
+        if !shared.firstSighting(InodeKey(dev: myDev, ino: st.st_ino)) {
+            stats.directoriesDeduped += 1
+            return .terminal(FileNode(
+                name: name, isDirectory: true, sizeOnDisk: 0, logicalSize: 0,
+                modified: ownMtime, fileCount: 0,
+                flags: dirFlags.union(.duplicate), children: []))
         }
 
         let fd = open(path, O_RDONLY | O_DIRECTORY)

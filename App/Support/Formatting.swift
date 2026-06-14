@@ -25,6 +25,8 @@ enum NodeIcon {
         if node.flags.contains(.package) { return "shippingbox" }
         if node.flags.contains(.symlink) { return "arrow.up.right" }
         if node.flags.contains(.aggregatedSmallFiles) { return "ellipsis.circle" }
+        if node.flags.contains(.freeSpace) { return "circle.dashed" }
+        if node.flags.contains(.unaccountedSpace) { return "questionmark.circle" }
         return node.isDirectory ? "folder" : "doc"
     }
 }

@@ -70,9 +70,13 @@ struct ChartArea: View {
                 Divider()
             }
             BreadcrumbBar()
+            if model.showsVolumeUsage {
+                Divider()
+                VolumeUsageBar()
+            }
             Divider()
             if let focus = model.focus {
-                ChartContent(focus: focus)
+                ChartContent(focus: focus, renderNode: model.displayFocus)
                     .padding(16)
             }
             if !model.bag.isEmpty {
@@ -89,7 +93,13 @@ struct ChartArea: View {
 /// and the headless snapshot mode.
 struct ChartContent: View {
     @Environment(AppModel.self) private var model
+    /// The real focus node — drives the zoom transition identity and navigation.
     let focus: FileNode
+    /// The node actually drawn. Defaults to `focus`; the detail pane passes the
+    /// free-space-decorated root here so the chart shows the whole volume.
+    var renderNode: FileNode?
+
+    private var node: FileNode { renderNode ?? focus }
 
     /// Delta tint closure when comparing, else nil (palette coloring).
     private var tint: ((FileNode?) -> Color)? {
@@ -101,6 +111,8 @@ struct ChartContent: View {
         // Re-identifying the chart on focus change lets the transition animate the
         // zoom in/out. Navigation methods wrap the focus change in `withAnimation`;
         // live-scan rebuilds don't, so they swap instantly (no flashing mid-scan).
+        // Keyed on the *real* focus so swapping in the decorated root (same focus)
+        // doesn't retrigger the zoom animation.
         chart
             .id(ObjectIdentifier(focus))
             .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -111,7 +123,7 @@ struct ChartContent: View {
         switch model.vizKind {
         case .sunburst:
             SunburstView(
-                focus: focus, hovered: model.hovered, colorOverride: tint,
+                focus: node, hovered: model.hovered, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
@@ -119,7 +131,7 @@ struct ChartContent: View {
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .pie:
             SunburstView(
-                focus: focus, hovered: model.hovered, maxDepth: 1, colorOverride: tint,
+                focus: node, hovered: model.hovered, maxDepth: 1, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
@@ -127,23 +139,23 @@ struct ChartContent: View {
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .treemap:
             TreemapView(
-                focus: focus, hovered: model.hovered, colorOverride: tint,
+                focus: node, hovered: model.hovered, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .icicle:
             IcicleView(
-                focus: focus, hovered: model.hovered, colorOverride: tint,
+                focus: node, hovered: model.hovered, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .list:
-            ListTableView(focus: focus)
+            ListTableView(focus: node)
         case .bar:
             BarView(
-                focus: focus,
+                focus: node,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )
@@ -204,6 +216,59 @@ private struct BreadcrumbBar: View {
     }
 }
 
+// MARK: - Volume usage header
+
+/// A slim "Used · Free · Total" strip with a proportional bar, shown at the
+/// volume root. Mirrors Disk Utility's capacity readout.
+private struct VolumeUsageBar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let usage = model.volumeUsage, let root = model.root {
+            let scanned = max(0, root.sizeOnDisk)
+            let capacity = max(usage.capacity, 1)
+            let free = min(max(0, usage.free), usage.capacity)
+            let other = max(0, usage.capacity - free - scanned)
+
+            VStack(spacing: 5) {
+                GeometryReader { geo in
+                    HStack(spacing: 1) {
+                        segment(scanned, of: capacity, width: geo.size.width, color: .accentColor)
+                        segment(other, of: capacity, width: geo.size.width, color: VolumeSwatch.other)
+                        segment(free, of: capacity, width: geo.size.width, color: VolumeSwatch.free)
+                    }
+                }
+                .frame(height: 8)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                HStack(spacing: 14) {
+                    legend(.accentColor, "Used", scanned)
+                    if other > 0 { legend(VolumeSwatch.other, "Other", other) }
+                    legend(VolumeSwatch.free, "Free", free)
+                    Spacer()
+                    Text("\(Format.bytes(usage.capacity)) total")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+        }
+    }
+
+    private func segment(_ value: Int64, of total: Int64, width: CGFloat, color: Color) -> some View {
+        color.frame(width: max(0, width * CGFloat(value) / CGFloat(total)))
+    }
+
+    private func legend(_ color: Color, _ label: String, _ bytes: Int64) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 9, height: 9)
+            Text(label).foregroundStyle(.secondary)
+            Text(Format.bytes(bytes)).fontWeight(.medium)
+        }
+    }
+}
+
 // MARK: - Status bar
 
 private struct StatusBar: View {
@@ -216,11 +281,11 @@ private struct StatusBar: View {
                     .foregroundStyle(.secondary)
                 Text(node.name).fontWeight(.medium).lineLimit(1)
                 Text(Format.bytes(node.sizeOnDisk)).foregroundStyle(.secondary)
-                if let focus = model.focus, focus.sizeOnDisk > 0 {
+                if let focus = model.displayFocus, focus.sizeOnDisk > 0 {
                     Text(Format.percent(Double(node.sizeOnDisk) / Double(focus.sizeOnDisk)))
                         .foregroundStyle(.tertiary)
                 }
-            } else if let focus = model.focus {
+            } else if let focus = model.displayFocus {
                 Text(focus.name).fontWeight(.medium).lineLimit(1)
                 Text(Format.bytes(focus.sizeOnDisk)).foregroundStyle(.secondary)
                 Text("·").foregroundStyle(.tertiary)

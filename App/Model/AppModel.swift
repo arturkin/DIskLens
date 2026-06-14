@@ -45,6 +45,37 @@ final class AppModel {
     var canGoUp: Bool { focusPath.count > 1 }
     var selectedRun: RunMetadata? { runs.first { $0.id == selectedRunID } }
 
+    /// The selected run's volume capacity/free, when it scanned a whole volume.
+    var volumeUsage: VolumeUsage? { selectedRun?.volumeUsage }
+
+    /// The volume root decorated with Free / Other-space wedges, rebuilt only when
+    /// its inputs change so its identity stays stable across renders (a fresh node
+    /// every render would break hover highlighting and the zoom transition).
+    private(set) var decoratedRoot: FileNode?
+
+    /// The node the charts should draw. At the volume root (not diffing, not
+    /// scanning) that's the decorated root, so the chart shows the whole disk;
+    /// anywhere deeper it's the plain focus.
+    var displayFocus: FileNode? {
+        if focusPath.count == 1, let decoratedRoot { return decoratedRoot }
+        return focus
+    }
+
+    /// Whether to show the "Used · Free · Total" header — only at the volume root,
+    /// when a free-space reading is available.
+    var showsVolumeUsage: Bool { focusPath.count == 1 && decoratedRoot != nil }
+
+    /// Recomputes `decoratedRoot` from the current root + volume usage. Free-space
+    /// wedges only make sense for a whole-volume scan shown on its own (not while
+    /// scanning or diffing), so it's nil otherwise.
+    private func rebuildDecoratedRoot() {
+        guard !isScanning, !isComparing, let root, let usage = volumeUsage else {
+            decoratedRoot = nil
+            return
+        }
+        decoratedRoot = FreeSpaceDecorator.decorate(root: root, usage: usage)
+    }
+
     // MARK: Lifecycle
 
     func bootstrap() {
@@ -111,6 +142,7 @@ final class AppModel {
         // A prune (applyPruned) deliberately does NOT go through present(): it
         // preserves identities for untouched branches, so the bag stays valid there.
         self.bag.removeAll()
+        rebuildDecoratedRoot()
         refreshCompareForCurrentRun()
     }
 
@@ -221,6 +253,7 @@ final class AppModel {
         liveScannedRoot = root.standardizedFileURL.path
         liveRootName = Self.rootName(for: root)
         hovered = nil
+        decoratedRoot = nil              // the live root isn't a finished volume reading yet
         diff = nil                       // palette-color the preview; real diff recomputes on finish
         presentLiveRoot()
         bag.removeAll()                  // identities belong to the stashed tree now
@@ -259,6 +292,7 @@ final class AppModel {
         bag = stash.bag
         hovered = nil
         self.stash = nil
+        rebuildDecoratedRoot()
         refreshCompareForCurrentRun()
     }
 
@@ -303,6 +337,12 @@ final class AppModel {
         // either is nonsensical and a needless way to harm a mounted volume.
         if node.flags.contains(.mountPoint) { return false }
         if node.flags.contains(.permissionDenied) { return false }
+        // A duplicate is a zero-size alias of an inode counted elsewhere (an APFS
+        // firmlink target like /System/Volumes/Data); acting on it would target a
+        // live system directory, never the bytes the user thinks they're freeing.
+        if node.flags.contains(.duplicate) { return false }
+        // The Free / Other-space wedges are synthetic — they map to no real file.
+        if node.flags.contains(.freeSpace) || node.flags.contains(.unaccountedSpace) { return false }
         return true
     }
 
@@ -396,11 +436,12 @@ final class AppModel {
                 id: id, date: meta.date, scannedRoot: meta.scannedRoot, mode: meta.mode,
                 volumeName: meta.volumeName, totalSize: pruned.root.sizeOnDisk,
                 fileCount: Int(pruned.root.fileCount), durationMs: meta.durationMs,
-                appVersion: meta.appVersion)
+                appVersion: meta.appVersion, capacity: meta.capacity, freeSpace: meta.freeSpace)
             try? store.save(tree: pruned, metadata: updated)
             reloadRuns()
             selectedRunID = id
         }
+        rebuildDecoratedRoot()
     }
 
     /// Synchronous tree load, used only by the headless snapshot mode.
@@ -413,6 +454,7 @@ final class AppModel {
 
     private func finishScan(tree: FileTree, stats: ScanStats?, root: URL, mode: ScanMode, started: Date) {
         store.maxRuns = Preferences.maxRuns
+        let usage = VolumeProbe.usage(forScannedRoot: root)
         let meta = RunMetadata(
             date: Date(),
             scannedRoot: tree.scannedRoot,
@@ -421,7 +463,9 @@ final class AppModel {
             totalSize: tree.root.sizeOnDisk,
             fileCount: Int(tree.root.fileCount),
             durationMs: Int(Date().timeIntervalSince(started) * 1000),
-            appVersion: Self.appVersion
+            appVersion: Self.appVersion,
+            capacity: usage?.capacity,
+            freeSpace: usage?.free
         )
         try? store.save(tree: tree, metadata: meta)
         lastStats = stats
@@ -452,6 +496,9 @@ final class AppModel {
         } else {
             diff = nil
         }
+        // Free-space wedges only show outside compare mode (the diff tints real
+        // nodes; a synthetic free wedge has no baseline to diff against).
+        rebuildDecoratedRoot()
     }
 
     func setBaseline(_ id: UUID) {

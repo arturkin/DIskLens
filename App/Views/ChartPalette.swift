@@ -21,6 +21,25 @@ enum ChartPalette {
         let brightness = min(0.96, 0.68 + Double(depth - 1) * 0.06)
         return Color(hue: hue, saturation: saturation, brightness: brightness)
     }
+
+    /// Fixed color for a synthetic volume wedge (free / unaccounted space), or nil
+    /// for a real node. Keeps the chart wedge and the header legend in sync.
+    static func volumeSegmentColor(_ node: FileNode?) -> Color? {
+        guard let flags = node?.flags else { return nil }
+        if flags.contains(.freeSpace) { return VolumeSwatch.free }
+        if flags.contains(.unaccountedSpace) { return VolumeSwatch.other }
+        return nil
+    }
+}
+
+/// Swatch colors for the volume-usage wedges, shared by the charts and the
+/// "Used · Free · Total" header so they read as the same thing.
+enum VolumeSwatch {
+    /// Free space — a light, near-neutral cool gray that reads as "empty",
+    /// distinct from the saturated folder hues and the darker "Other" gray.
+    static let free = Color(hue: 0.57, saturation: 0.07, brightness: 0.74)
+    /// Unaccounted space (purgeable / system-reserved / unreadable) — darker gray.
+    static let other = Color(white: 0.40)
 }
 
 enum SunburstColors {
@@ -29,6 +48,11 @@ enum SunburstColors {
         var ring1: [(start: Double, end: Double, hue: Double)] = []
 
         for (i, seg) in segments.filter({ $0.depth == 1 }).enumerated() {
+            if let special = ChartPalette.volumeSegmentColor(seg.node) {
+                result[seg.id] = special
+                ring1.append((seg.startAngle, seg.endAngle, -1))
+                continue
+            }
             let hue = seg.isOther ? -1 : ChartPalette.hue(i)
             ring1.append((seg.startAngle, seg.endAngle, hue))
             result[seg.id] = ChartPalette.color(hue: hue, depth: 1)
@@ -48,6 +72,11 @@ enum TreemapColors {
         var ring1: [(rect: TreemapRect, hue: Double)] = []
 
         for (i, tile) in tiles.filter({ $0.depth == 1 }).enumerated() {
+            if let special = ChartPalette.volumeSegmentColor(tile.node) {
+                result[tile.id] = special
+                ring1.append((tile.rect, -1))
+                continue
+            }
             let hue = tile.isOther ? -1 : ChartPalette.hue(i)
             ring1.append((tile.rect, hue))
             result[tile.id] = ChartPalette.color(hue: hue, depth: 1)
@@ -71,6 +100,11 @@ enum IcicleColors {
         var ring1: [(start: Double, end: Double, hue: Double)] = []
 
         for (i, tile) in tiles.filter({ $0.depth == 1 }).enumerated() {
+            if let special = ChartPalette.volumeSegmentColor(tile.node) {
+                result[tile.id] = special
+                ring1.append((tile.x, tile.x + tile.width, -1))
+                continue
+            }
             let hue = tile.isOther ? -1 : ChartPalette.hue(i)
             ring1.append((tile.x, tile.x + tile.width, hue))
             result[tile.id] = ChartPalette.color(hue: hue, depth: 1)

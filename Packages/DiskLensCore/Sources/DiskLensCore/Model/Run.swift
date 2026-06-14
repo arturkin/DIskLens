@@ -20,6 +20,11 @@ public struct RunMetadata: Codable, Sendable, Identifiable, Hashable {
     public let fileCount: Int
     public let durationMs: Int
     public let appVersion: String
+    /// Total capacity of the scanned volume, when the root was a volume root.
+    /// `nil` for folder scans and for runs recorded before free-space tracking.
+    public let capacity: Int64?
+    /// Free space on the scanned volume at scan time (matches Disk Utility's "Free").
+    public let freeSpace: Int64?
 
     public init(
         id: UUID = UUID(),
@@ -30,7 +35,9 @@ public struct RunMetadata: Codable, Sendable, Identifiable, Hashable {
         totalSize: Int64,
         fileCount: Int,
         durationMs: Int,
-        appVersion: String
+        appVersion: String,
+        capacity: Int64? = nil,
+        freeSpace: Int64? = nil
     ) {
         self.id = id
         self.date = date
@@ -41,5 +48,13 @@ public struct RunMetadata: Codable, Sendable, Identifiable, Hashable {
         self.fileCount = fileCount
         self.durationMs = durationMs
         self.appVersion = appVersion
+        self.capacity = capacity
+        self.freeSpace = freeSpace
+    }
+
+    /// The volume's capacity/free reading, if this run captured one.
+    public var volumeUsage: VolumeUsage? {
+        guard let capacity, let freeSpace else { return nil }
+        return VolumeUsage(capacity: capacity, free: freeSpace)
     }
 }
