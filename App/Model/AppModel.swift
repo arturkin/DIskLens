@@ -120,6 +120,129 @@ final class AppModel {
         cancellation?.cancel()
     }
 
+    // MARK: Cleanup — collection bag + trash
+
+    struct CollectedItem: Identifiable {
+        let id: ObjectIdentifier
+        let node: FileNode
+        let url: URL
+        var name: String { node.name }
+        var size: Int64 { node.sizeOnDisk }
+    }
+
+    private(set) var bag: [CollectedItem] = []
+    var bagTotalSize: Int64 { bag.reduce(0) { $0 + $1.size } }
+
+    /// Trash confirmation state (driven by the UI).
+    var trashCandidates: [FileNode] = []
+    var isConfirmingTrash = false
+    var lastTrashMessage: String?
+
+    /// Whether file actions (reveal/collect/trash) make sense for a node.
+    func actionable(_ node: FileNode) -> Bool {
+        guard let tree else { return false }
+        if node === tree.root { return false }
+        if node.flags.contains(.aggregatedSmallFiles) { return false }
+        return true
+    }
+
+    func isCollected(_ node: FileNode) -> Bool {
+        bag.contains { $0.id == ObjectIdentifier(node) }
+    }
+
+    func toggleCollect(_ node: FileNode) {
+        let id = ObjectIdentifier(node)
+        if let index = bag.firstIndex(where: { $0.id == id }) {
+            bag.remove(at: index)
+        } else if actionable(node), let url = url(for: node) {
+            bag.append(CollectedItem(id: id, node: node, url: url))
+        }
+    }
+
+    func clearBag() { bag.removeAll() }
+
+    func reveal(_ node: FileNode) {
+        if let url = url(for: node) { TrashService.reveal(url) }
+    }
+
+    /// Absolute URL of a node, by reconstructing its name path from the tree root.
+    func url(for node: FileNode) -> URL? {
+        guard let tree else { return nil }
+        return NodeLocator.absoluteURL(scannedRoot: tree.scannedRoot, root: tree.root, target: node)
+    }
+
+    // MARK: Trash flow (confirmation → perform → prune → persist)
+
+    func requestTrash(_ nodes: [FileNode]) {
+        let candidates = nodes.filter { actionable($0) }
+        guard !candidates.isEmpty else { return }
+        trashCandidates = candidates
+        isConfirmingTrash = true
+    }
+
+    func requestTrashBag() {
+        requestTrash(bag.map(\.node))
+    }
+
+    func confirmTrash() {
+        performTrash(trashCandidates)
+        trashCandidates = []
+        isConfirmingTrash = false
+    }
+
+    private func performTrash(_ nodes: [FileNode]) {
+        var removed = Set<ObjectIdentifier>()
+        var reclaimed: Int64 = 0
+        var failures = 0
+
+        for node in nodes {
+            guard actionable(node), let url = url(for: node),
+                  url.lastPathComponent == node.name else { failures += 1; continue }
+            do {
+                try TrashService.trash(url)
+                removed.insert(ObjectIdentifier(node))
+                reclaimed += node.sizeOnDisk
+            } catch {
+                failures += 1
+            }
+        }
+
+        if !removed.isEmpty, let tree {
+            applyPruned(TreePruner.prune(tree, removing: removed))
+        }
+        bag.removeAll { removed.contains($0.id) }
+
+        var message = "Moved \(removed.count) item\(removed.count == 1 ? "" : "s") to Trash · \(Format.bytes(reclaimed)) reclaimed"
+        if failures > 0 { message += " · \(failures) failed" }
+        lastTrashMessage = message
+    }
+
+    /// Swap in a pruned tree, re-derive the focus path by name, and persist.
+    private func applyPruned(_ pruned: FileTree) {
+        let focusNames = focusPath.dropFirst().map(\.name)
+        tree = pruned
+        var path: [FileNode] = [pruned.root]
+        var cursor = pruned.root
+        for name in focusNames {
+            guard let next = cursor.children.first(where: { $0.name == name }) else { break }
+            path.append(next)
+            cursor = next
+        }
+        focusPath = path
+        hovered = nil
+
+        if let id = selectedRunID, let meta = runs.first(where: { $0.id == id }) {
+            let updated = RunMetadata(
+                id: id, date: meta.date, scannedRoot: meta.scannedRoot, mode: meta.mode,
+                volumeName: meta.volumeName, totalSize: pruned.root.sizeOnDisk,
+                fileCount: Int(pruned.root.fileCount), durationMs: meta.durationMs,
+                appVersion: meta.appVersion)
+            try? store.save(tree: pruned, metadata: updated)
+            reloadRuns()
+            selectedRunID = id
+        }
+    }
+
     private func finishScan(_ result: DiskScanner.Result, root: URL, mode: ScanMode, started: Date) {
         let meta = RunMetadata(
             date: Date(),

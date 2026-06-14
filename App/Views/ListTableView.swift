@@ -25,12 +25,13 @@ struct FileRow: Identifiable {
 }
 
 /// Sortable table of the focus node's children. Double-click drills into a
-/// directory. (Cleanup actions are added in M5.)
+/// directory; right-click acts on the selection (reveal / collect / trash).
 struct ListTableView: View {
+    @Environment(AppModel.self) private var model
     let focus: FileNode
-    var onSelect: (FileNode) -> Void
 
     @State private var sortOrder = [KeyPathComparator(\FileRow.size, order: .reverse)]
+    @State private var selection = Set<FileRow.ID>()
 
     private var rows: [FileRow] {
         focus.children
@@ -39,7 +40,7 @@ struct ListTableView: View {
     }
 
     var body: some View {
-        Table(rows, sortOrder: $sortOrder) {
+        Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.name) { row in
                 Label(row.name, systemImage: row.icon)
                     .lineLimit(1)
@@ -63,12 +64,16 @@ struct ListTableView: View {
             }
             .width(110)
         }
-        .contextMenu(forSelectionType: FileRow.ID.self) { _ in
-            // M5 adds Reveal/Trash/Collection here.
+        .contextMenu(forSelectionType: FileRow.ID.self) { ids in
+            ChartNodeMenu(nodes: nodes(for: ids))
         } primaryAction: { ids in
             if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
-                onSelect(row.node)
+                model.drill(into: row.node)
             }
         }
+    }
+
+    private func nodes(for ids: Set<FileRow.ID>) -> [FileNode] {
+        rows.filter { ids.contains($0.id) }.map(\.node)
     }
 }

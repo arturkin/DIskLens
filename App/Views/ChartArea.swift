@@ -7,6 +7,7 @@ struct ChartArea: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
         ZStack {
             if model.focus != nil {
                 content
@@ -21,6 +22,16 @@ struct ChartArea: View {
             }
         }
         .frame(minWidth: 560, minHeight: 480)
+        .confirmationDialog(
+            "Move \(model.trashCandidates.count) item\(model.trashCandidates.count == 1 ? "" : "s") to Trash?",
+            isPresented: $model.isConfirmingTrash, titleVisibility: .visible
+        ) {
+            Button("Move to Trash", role: .destructive) { model.confirmTrash() }
+            Button("Cancel", role: .cancel) { model.trashCandidates = [] }
+        } message: {
+            let total = model.trashCandidates.reduce(Int64(0)) { $0 + $1.sizeOnDisk }
+            Text("\(Format.bytes(total)) will be moved to the Trash. You can restore items from the Trash.")
+        }
     }
 
     @ViewBuilder
@@ -31,6 +42,10 @@ struct ChartArea: View {
             if let focus = model.focus {
                 ChartContent(focus: focus)
                     .padding(16)
+            }
+            if !model.bag.isEmpty {
+                Divider()
+                BagBar()
             }
             Divider()
             StatusBar()
@@ -53,6 +68,7 @@ struct ChartContent: View {
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
             )
+            .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .pie:
             SunburstView(
                 focus: focus, hovered: model.hovered, maxDepth: 1,
@@ -60,20 +76,23 @@ struct ChartContent: View {
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
             )
+            .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .treemap:
             TreemapView(
                 focus: focus, hovered: model.hovered,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )
+            .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .icicle:
             IcicleView(
                 focus: focus, hovered: model.hovered,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )
+            .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .list:
-            ListTableView(focus: focus, onSelect: { model.drill(into: $0) })
+            ListTableView(focus: focus)
         case .bar:
             BarView(focus: focus, onSelect: { model.drill(into: $0) })
         }
