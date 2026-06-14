@@ -48,18 +48,34 @@ struct ChartContent: View {
         switch model.vizKind {
         case .sunburst:
             SunburstView(
-                focus: focus,
-                hovered: model.hovered,
+                focus: focus, hovered: model.hovered,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
             )
-        default:
-            ContentUnavailableView(
-                "\(model.vizKind.title) view",
-                systemImage: model.vizKind.symbol,
-                description: Text("Coming in the next milestone.")
+        case .pie:
+            SunburstView(
+                focus: focus, hovered: model.hovered, maxDepth: 1,
+                onHover: { model.hovered = $0 },
+                onSelect: { model.drill(into: $0) },
+                onBack: { model.goUp() }
             )
+        case .treemap:
+            TreemapView(
+                focus: focus, hovered: model.hovered,
+                onHover: { model.hovered = $0 },
+                onSelect: { model.drill(into: $0) }
+            )
+        case .icicle:
+            IcicleView(
+                focus: focus, hovered: model.hovered,
+                onHover: { model.hovered = $0 },
+                onSelect: { model.drill(into: $0) }
+            )
+        case .list:
+            ListTableView(focus: focus, onSelect: { model.drill(into: $0) })
+        case .bar:
+            BarView(focus: focus, onSelect: { model.drill(into: $0) })
         }
     }
 }
