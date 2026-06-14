@@ -79,7 +79,14 @@ public final class RunStore: @unchecked Sendable {
             throw StoreError.runNotFound(id)
         }
         let data = try Data(contentsOf: url)
-        return try TreeCodec.decode(data)
+        let tree = try TreeCodec.decode(data)
+        // Self-heal: rewrite legacy (slow plist) blobs in the fast format so the
+        // expensive decode only happens once. Best-effort — a failure here just
+        // means the next load decodes the legacy blob again.
+        if !TreeCodec.isCurrentFormat(data), let blob = try? TreeCodec.encode(tree) {
+            try? blob.write(to: url, options: .atomic)
+        }
+        return tree
     }
 
     public func deleteRun(id: UUID) throws {

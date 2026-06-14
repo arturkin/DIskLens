@@ -82,6 +82,31 @@ struct RunStoreTests {
         #expect(throws: (any Error).self) { _ = try store.loadTree(id: meta.id) }
     }
 
+    @Test("loadTree migrates a legacy plist blob to the current fast format")
+    func migratesLegacyBlobOnLoad() throws {
+        let (store, tmp) = makeStore()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let tree = Fixtures.sampleTree()
+        let meta = Fixtures.metadata(date: Date(timeIntervalSince1970: 1000), total: 5120, files: 3)
+
+        // Seed the store with a legacy-format blob (zlib of a binary plist, no
+        // header) while keeping the index consistent via the normal save path.
+        try store.save(tree: tree, metadata: meta)
+        let blobURL = tmp.appendingPathComponent("runs/\(meta.id.uuidString).tree")
+        let legacy = try (PropertyListEncoder.binary().encode(tree) as NSData).compressed(using: .zlib) as Data
+        try legacy.write(to: blobURL, options: .atomic)
+        #expect(!TreeCodec.isCurrentFormat(try Data(contentsOf: blobURL)))
+
+        // Loading it returns the right tree and rewrites the blob in place.
+        let loaded = try store.loadTree(id: meta.id)
+        #expect(assertTreesEqual(loaded.root, tree.root))
+        #expect(TreeCodec.isCurrentFormat(try Data(contentsOf: blobURL)))
+
+        // The migrated blob still decodes correctly.
+        #expect(assertTreesEqual(try store.loadTree(id: meta.id).root, tree.root))
+    }
+
     @Test("a new RunStore instance sees previously persisted runs")
     func persistsAcrossInstances() throws {
         let (store, tmp) = makeStore()
