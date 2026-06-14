@@ -8,7 +8,13 @@ struct DiskLensApp: App {
         WindowGroup {
             ContentView()
                 .environment(model)
-                .task { model.bootstrap() }
+                .task {
+                    if let dir = SnapshotMode.requestedDirectory {
+                        SnapshotMode.run(into: dir)
+                    } else {
+                        model.bootstrap()
+                    }
+                }
         }
         .defaultSize(width: 1200, height: 800)
         .commands {

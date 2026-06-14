@@ -28,32 +28,38 @@ struct ChartArea: View {
         VStack(spacing: 0) {
             BreadcrumbBar()
             Divider()
-            chart
-                .padding(16)
+            if let focus = model.focus {
+                ChartContent(focus: focus)
+                    .padding(16)
+            }
             Divider()
             StatusBar()
         }
     }
+}
 
-    @ViewBuilder
-    private var chart: some View {
-        if let focus = model.focus {
-            switch model.vizKind {
-            case .sunburst:
-                SunburstView(
-                    focus: focus,
-                    hovered: model.hovered,
-                    onHover: { model.hovered = $0 },
-                    onSelect: { model.drill(into: $0) },
-                    onBack: { model.goUp() }
-                )
-            default:
-                ContentUnavailableView(
-                    "\(model.vizKind.title) view",
-                    systemImage: model.vizKind.symbol,
-                    description: Text("Coming in the next milestone.")
-                )
-            }
+/// Renders the active visualization for a focus node. Shared by the detail pane
+/// and the headless snapshot mode.
+struct ChartContent: View {
+    @Environment(AppModel.self) private var model
+    let focus: FileNode
+
+    var body: some View {
+        switch model.vizKind {
+        case .sunburst:
+            SunburstView(
+                focus: focus,
+                hovered: model.hovered,
+                onHover: { model.hovered = $0 },
+                onSelect: { model.drill(into: $0) },
+                onBack: { model.goUp() }
+            )
+        default:
+            ContentUnavailableView(
+                "\(model.vizKind.title) view",
+                systemImage: model.vizKind.symbol,
+                description: Text("Coming in the next milestone.")
+            )
         }
     }
 }
