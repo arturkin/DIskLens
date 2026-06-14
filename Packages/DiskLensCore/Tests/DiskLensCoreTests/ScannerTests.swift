@@ -78,6 +78,37 @@ struct ScannerTests {
         #expect(result.tree.root.sizeOnDisk == t.duBytes())
     }
 
+    @Test("a directory reached via two paths (APFS firmlink topology) is counted once")
+    func duplicateDirectoryInodeDedupe() throws {
+        // APFS volume groups expose the Data volume both directly
+        // (/System/Volumes/Data) and via firmlinks (/Users, /Applications…), all
+        // sharing one st_dev and the SAME directory inodes — so a naive walk
+        // counts that content twice and reports more than the disk's capacity.
+        // Reproduce that exactly: walk one physical directory twice through a
+        // single shared dedupe set. Two paths, identical inodes — a firmlink.
+        let t = TempTree()
+        t.file("data/users/big.bin", bytes: 256_000)
+        t.file("data/apps/app.bin", bytes: 128_000)
+
+        let path = t.root.appending(path: "data").path
+        var st = stat()
+        #expect(lstat(path, &st) == 0)
+
+        let shared = SharedScanState(
+            options: ScanOptions(root: t.root), cancellation: nil,
+            progress: nil, progressInterval: 1, forceLstat: false)
+
+        // First sighting counts everything; the second must dedupe to nothing.
+        let first = try SubWalk(shared: shared)
+            .buildSubtree(path: path, name: "data", parentDev: st.st_dev)
+        let second = try SubWalk(shared: shared)
+            .buildSubtree(path: path, name: "data", parentDev: st.st_dev)
+
+        #expect(first.sizeOnDisk > 0)
+        #expect(second.sizeOnDisk == 0)            // every inode already counted
+        #expect(second.flags.contains(.duplicate)) // surfaced as a zero-size alias
+    }
+
     @Test("nested directories aggregate descendant sizes and counts")
     func nested() throws {
         let t = TempTree()

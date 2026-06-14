@@ -15,6 +15,16 @@ public struct NodeFlags: OptionSet, Codable, Sendable, Hashable {
     public static let mountPoint = NodeFlags(rawValue: 1 << 3)
     /// A synthetic node aggregating files below the retain threshold.
     public static let aggregatedSmallFiles = NodeFlags(rawValue: 1 << 4)
+    /// This directory's inode was already counted elsewhere in the scan and is
+    /// shown here as a zero-size alias. Happens with APFS volume-group firmlinks
+    /// (e.g. `/Users` and `/System/Volumes/Data/Users` are the same inode), where
+    /// counting both would inflate the total well past the disk's capacity.
+    public static let duplicate = NodeFlags(rawValue: 1 << 5)
+    /// A synthetic wedge representing the volume's free space (not a real file).
+    public static let freeSpace = NodeFlags(rawValue: 1 << 6)
+    /// A synthetic wedge for volume space the scan couldn't account for — purgeable,
+    /// system-reserved, or unreadable bytes (capacity − free − scanned).
+    public static let unaccountedSpace = NodeFlags(rawValue: 1 << 7)
 }
 
 /// An immutable node in a scanned file tree.

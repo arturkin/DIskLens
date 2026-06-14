@@ -82,7 +82,9 @@ private struct ChartSnapshotHost: View {
     let focus: FileNode
 
     var body: some View {
-        ChartContent(focus: focus)
+        // Render what the app actually shows: the decorated (free-space) root at
+        // the volume root, the plain focus elsewhere.
+        ChartContent(focus: focus, renderNode: model.displayFocus)
             .environment(model)
             .padding(16)
     }
