@@ -39,6 +39,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: NO
         COMBINE_HIDPI_IMAGES: YES
         LSMINIMUMSYSTEMVERSION: "14.0"
+        ENABLE_TESTABILITY: YES   # let DiskLensTests @testable import the app
     info:
       path: App/Info.plist
       properties:
@@ -64,11 +65,32 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.arturkin.DiskLens.helper
         PRODUCT_NAME: disklens-helper
 
+  DiskLensTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: DiskLens
+      - package: DiskLensCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.arturkin.DiskLensTests
+        # Hosted in the app so tests can `@testable import DiskLens` and render
+        # SwiftUI views (ImageRenderer) against the real view code.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/DiskLens.app/Contents/MacOS/DiskLens"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
 schemes:
   DiskLens:
     build:
       targets:
         DiskLens: all
         disklens-helper: all
+        DiskLensTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - DiskLensTests

@@ -18,7 +18,10 @@ Feature-complete **v1**. Milestones M1–M8 are all done and committed.
 - **App** (SwiftUI): sidebar with scan buttons + run history, 6 switchable charts
   (sunburst, pie, treemap, icicle, list/table, bar), drill/breadcrumb/hover,
   a cursor-following **hover tooltip** on every interactive chart (sunburst/pie/treemap/icicle/bar —
-  `ChartTooltip.swift`; the list view shows columns), a **zoom in/out transition** when changing
+  `ChartTooltip.swift`; the list view shows columns). The tooltip is a fixed **dark card with white
+  text** (not a translucent material — vivid wedges bled through and washed it out) and its near
+  corner **hugs the cursor** (~6pt; it measures its own size for placement but is always rendered,
+  never gated on the measurement). A **zoom in/out transition** when changing
   focus (`ChartContent` re-`id`s on `focus` + `.transition`; nav methods wrap the change in
   `withAnimation`), a **Back button + ⌘[** in the breadcrumb bar (plus clickable crumbs and the
   sunburst centre-hole), cleanup (reveal / collect into a bag / move to Trash), compare/diff with
@@ -44,7 +47,19 @@ xcodegen generate                                  # ONLY after adding/removing/
 cd Packages/DiskLensCore && swift test             # fast core tests (the TDD inner loop)
 cd ~/Work/DiskLens
 xcodebuild -scheme DiskLens -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+# App-target tests (SwiftUI views via ImageRenderer — e.g. the hover tooltip):
+xcodebuild -scheme DiskLens -destination 'platform=macOS,name=My Mac' CODE_SIGNING_ALLOWED=NO test
 ```
+
+**App tests (`Tests/`, target `DiskLensTests`)** are *hosted* in the app (so they can
+`@testable import DiskLens`) and render real SwiftUI views offscreen with `ImageRenderer`, then
+inspect the pixels — the only way to catch "renders, but invisible" bugs that pure-logic tests
+miss. `ChartTooltipTests` renders the `.chartTooltip` overlay over a black host and asserts it
+paints non-black pixels (set `DISKLENS_TOOLTIP_SNAPSHOT=<dir>` in the test scheme's environment to
+dump a PNG), and also asserts the pure `ChartTooltip.origin` placement hugs the cursor + stays in
+bounds, and that the card's text/surface colours meet WCAG contrast (`contrastRatio`: AAA title,
+AA detail). The headless `RenderBox metallib` log line is benign (no Metal offscreen); text +
+border still render, which is what the render assertion checks.
 
 **Visual verification without Screen Recording permission** — headless snapshot mode
 renders the active run's charts to PNGs via `ImageRenderer`:
@@ -176,10 +191,11 @@ icon cache. Re-register and bounce the Dock, then fully relaunch the app:
     (the helper finishes and exits on its own).
 
 **Testing**
-12. **No app-target tests** — only `DiskLensCore` is unit-tested. The `AppModel`
-    state machine (scan/select/compare/trash flows) is reasoned-about, not tested.
-    A test target with a mock `RunStore` + `ElevationService` would cover the
-    async races that the code-review pass had to verify by hand.
+12. **Thin app-target coverage** — there's now a hosted `DiskLensTests` target, but it
+    only covers the hover tooltip (`ChartTooltipTests`, render + position). The `AppModel`
+    state machine (scan/select/compare/trash flows, the live-preview `scanGen`/stash logic)
+    is still reasoned-about, not tested. A mock `RunStore` + `ElevationService` would let
+    `DiskLensTests` cover the async races the code-review pass had to verify by hand.
 
 ---
 

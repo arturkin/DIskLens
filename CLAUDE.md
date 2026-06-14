@@ -81,8 +81,13 @@ project.yml                   XcodeGen spec — the single source of truth for t
 xcodegen generate                                   # regenerate the project (after file changes)
 cd Packages/DiskLensCore && swift test              # fast core unit tests
 xcodebuild -scheme DiskLens -destination 'platform=macOS' build   # +CODE_SIGNING_ALLOWED=NO unsigned
+xcodebuild -scheme DiskLens -destination 'platform=macOS,name=My Mac' test   # app tests (DiskLensTests)
 open DiskLens.xcodeproj                              # or just open it
 ```
+
+- **App-target tests** live in `Tests/` (`DiskLensTests`, hosted in the app for `@testable import`).
+  They render SwiftUI views offscreen with `ImageRenderer` and inspect pixels — the way to catch
+  "renders but invisible" view bugs that pure-logic tests can't (e.g. `ChartTooltipTests`).
 
 ## Known follow-ups
 
