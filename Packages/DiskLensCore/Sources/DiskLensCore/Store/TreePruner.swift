@@ -24,8 +24,14 @@ public enum TreePruner {
         for child in node.children {
             if let survivor = prune(child, ids) { kept.append(survivor) }
         }
-        if kept.count == node.children.count {
-            // Nothing beneath this node changed; reuse it as-is.
+        // `prune` returns the *same instance* when nothing in a subtree changed, so
+        // identity equality across all children means this whole subtree is
+        // untouched. A count match alone is NOT enough: a child can survive (count
+        // unchanged) yet be rebuilt because a *deeper* descendant was removed —
+        // reusing `node` then would discard that rebuilt subtree and lose the
+        // deletion above the affected parent.
+        if kept.count == node.children.count,
+           zip(kept, node.children).allSatisfy({ $0 === $1 }) {
             return node
         }
 

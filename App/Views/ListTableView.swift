@@ -71,6 +71,9 @@ struct ListTableView: View {
                 model.drill(into: row.node)
             }
         }
+        // Drilling changes `focus`, so the rows are now a different directory's;
+        // drop the old selection rather than carrying stale node IDs across.
+        .onChange(of: ObjectIdentifier(focus)) { selection.removeAll() }
     }
 
     private func nodes(for ids: Set<FileRow.ID>) -> [FileNode] {

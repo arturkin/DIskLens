@@ -60,6 +60,24 @@ struct TreePrunerTests {
         #expect(pruned.root.fileCount == 0)
     }
 
+    @Test("removing a deep grandchild updates every ancestor, not just its parent")
+    func removeDeepGrandchild() {
+        // root keeps the same number of children (just `mid`), and `mid` keeps a
+        // surviving child (`keep`). Removing `victim` must still shrink root.
+        let victim = file("victim", 7000)
+        let keep = file("keep", 1000)
+        let mid = dir("mid", [keep, victim])
+        let root = dir("root", [mid])
+        let tree = FileTree(root: root, scannedRoot: "/x")
+
+        let pruned = TreePruner.prune(tree, removing: [ObjectIdentifier(victim)])
+        #expect(pruned.root.sizeOnDisk == 1000)                       // 8000 − 7000
+        #expect(pruned.root.fileCount == 1)
+        #expect(pruned.root.child("mid")?.sizeOnDisk == 1000)
+        #expect(pruned.root.child("mid")?.child("victim") == nil)
+        #expect(pruned.root.child("mid")?.child("keep") != nil)
+    }
+
     @Test("removing nothing returns an equivalent tree")
     func removeNothing() {
         let root = dir("root", [file("a", 10), file("b", 20)])

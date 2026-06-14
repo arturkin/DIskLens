@@ -52,9 +52,10 @@ final class AppModel {
         reloadRuns()
         if let mostRecent = runs.first {
             select(runID: mostRecent.id)
-            if Preferences.autoRescanOnLaunch {
-                startScan(root: URL(filePath: mostRecent.scannedRoot),
-                          mode: mostRecent.mode == .admin ? .admin : .user)
+            // Auto-rescan only user-mode runs. An admin run would pop the
+            // privilege prompt on every launch — admin scans stay on-demand.
+            if Preferences.autoRescanOnLaunch, mostRecent.mode == .user {
+                startScan(root: URL(filePath: mostRecent.scannedRoot), mode: .user)
             }
         }
     }
@@ -92,12 +93,24 @@ final class AppModel {
                 diff = nil
             }
         }
+        // If the deleted run was the compare baseline, it now dangles; drop it and
+        // recompute against a fresh default so the diff doesn't show a phantom run.
+        if baselineRunID == id {
+            baselineRunID = nil
+            refreshCompareForCurrentRun()
+        }
     }
 
     private func present(tree: FileTree) {
         self.tree = tree
         self.focusPath = [tree.root]
         self.hovered = nil
+        // The collection bag holds node identities from the *previous* tree; a new
+        // scan or a switch to another run invalidates them (a stale node can't be
+        // located in the new tree, so trashing it would silently fail). Clear it.
+        // A prune (applyPruned) deliberately does NOT go through present(): it
+        // preserves identities for untouched branches, so the bag stays valid there.
+        self.bag.removeAll()
         refreshCompareForCurrentRun()
     }
 
@@ -199,6 +212,11 @@ final class AppModel {
         guard let tree else { return false }
         if node === tree.root { return false }
         if node.flags.contains(.aggregatedSmallFiles) { return false }
+        // Never offer destructive actions on a volume mount point or on a
+        // directory we couldn't even read (often a SIP/system path). Trashing
+        // either is nonsensical and a needless way to harm a mounted volume.
+        if node.flags.contains(.mountPoint) { return false }
+        if node.flags.contains(.permissionDenied) { return false }
         return true
     }
 
@@ -376,7 +394,13 @@ final class AppModel {
         let store = self.store
         Task {
             let baseline = await Task.detached { try? store.loadTree(id: baselineRunID) }.value
-            guard isComparing, self.baselineRunID == baselineRunID else { return }
+            // Bail if anything we diffed against changed while the baseline loaded:
+            // a different baseline, compare turned off, or — crucially — a new
+            // current tree (selecting another run). Otherwise a stale diff keyed by
+            // the old tree's node identities would overwrite the fresh one and tint
+            // every segment gray. The superseding present() spawns its own recompute.
+            guard isComparing, self.baselineRunID == baselineRunID,
+                  self.tree?.root === current.root else { return }
             if let baseline {
                 let computed = await Task.detached { DiffEngine.diff(baseline: baseline, current: current) }.value
                 self.diff = computed

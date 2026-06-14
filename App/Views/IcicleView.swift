@@ -5,6 +5,8 @@ import DiskLensCore
 struct IcicleView: View {
     let focus: FileNode
     var hovered: FileNode?
+    /// When set, overrides palette coloring (used for delta tinting in compare mode).
+    var colorOverride: ((FileNode?) -> Color)?
     var onHover: (FileNode?) -> Void
     var onSelect: (FileNode) -> Void
 
@@ -25,7 +27,7 @@ struct IcicleView: View {
                         width: tile.width * W,
                         height: bandH)
                     let path = Path(rect.insetBy(dx: 0.5, dy: 0.75))
-                    let base = colors[tile.id] ?? .gray
+                    let base = colorOverride?(tile.node) ?? colors[tile.id] ?? .gray
                     let isHovered = tile.node.map { ObjectIdentifier($0) == hoveredID } ?? false
                     ctx.fill(path, with: .color(base.opacity(isHovered ? 1.0 : 0.92)))
                     ctx.stroke(path, with: .color(Color(nsColor: .windowBackgroundColor)),

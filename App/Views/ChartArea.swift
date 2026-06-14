@@ -108,7 +108,7 @@ struct ChartContent: View {
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .icicle:
             IcicleView(
-                focus: focus, hovered: model.hovered,
+                focus: focus, hovered: model.hovered, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )
