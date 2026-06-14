@@ -25,6 +25,59 @@ struct ScannerTests {
         #expect(root.sizeOnDisk >= root.children.reduce(0) { $0 + $1.sizeOnDisk })
     }
 
+    @Test("getattrlistbulk and lstat listing paths produce identical trees")
+    func bulkMatchesLstat() throws {
+        let t = TempTree()
+        t.file("a.txt", bytes: 10_000)
+        t.file("sub/b.bin", bytes: 30_000)
+        t.file("sub/deep/c.dat", bytes: 7_000)
+        let original = t.file("sub/orig.bin", bytes: 12_000)
+        t.hardlink("sub/deep/link.bin", to: original)   // hard link → dedupe on both paths
+        t.symlink("sub/ptr", to: original)              // symlink → not followed
+
+        let bulk = try DiskScanner().scan(ScanOptions(root: t.root))
+        var lstatScanner = DiskScanner()
+        lstatScanner.forceLstatListing = true
+        let lstat = try lstatScanner.scan(ScanOptions(root: t.root))
+
+        #expect(bulk.stats == lstat.stats)
+        #expect(bulk.tree.root.sizeOnDisk == lstat.tree.root.sizeOnDisk)
+        assertSameTree(bulk.tree.root, lstat.tree.root)
+    }
+
+    /// Recursively asserts two scanned trees are structurally and numerically equal
+    /// (children matched by name, since both paths sort by size).
+    private func assertSameTree(_ a: FileNode, _ b: FileNode) {
+        #expect(a.name == b.name)
+        #expect(a.isDirectory == b.isDirectory)
+        #expect(a.sizeOnDisk == b.sizeOnDisk)
+        #expect(a.logicalSize == b.logicalSize)
+        #expect(a.fileCount == b.fileCount)
+        #expect(a.flags == b.flags)
+        #expect(a.children.count == b.children.count)
+        for childA in a.children {
+            guard let childB = b.children.first(where: { $0.name == childA.name }) else {
+                Issue.record("missing child \(childA.name) in lstat tree"); continue
+            }
+            assertSameTree(childA, childB)
+        }
+    }
+
+    @Test("a hard link spanning two parallel subtrees is counted once")
+    func crossSubtreeHardlinkDedupe() throws {
+        // dirA and dirB are separate root children → walked by separate parallel
+        // SubWalks. The shared inode set must still dedupe the link between them.
+        let t = TempTree()
+        let original = t.file("dirA/orig.bin", bytes: 64_000)
+        t.dir("dirB")
+        t.hardlink("dirB/link.bin", to: original)
+
+        let result = try DiskScanner().scan(ScanOptions(root: t.root))
+        #expect(result.stats.hardlinksDeduped == 1)
+        // Total counts the 64 KB once, not twice (du-equivalent).
+        #expect(result.tree.root.sizeOnDisk == t.duBytes())
+    }
+
     @Test("nested directories aggregate descendant sizes and counts")
     func nested() throws {
         let t = TempTree()

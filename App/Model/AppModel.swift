@@ -189,6 +189,15 @@ final class AppModel {
         cancellation?.cancel()
     }
 
+    /// Whether there's a selected run we can re-scan.
+    var canRescan: Bool { !isScanning && selectedRun != nil }
+
+    /// Re-runs the currently selected run's scan (same root + privilege mode).
+    func rescanCurrent() {
+        guard let run = selectedRun else { return }
+        startScan(root: URL(filePath: run.scannedRoot), mode: run.mode == .admin ? .admin : .user)
+    }
+
     // MARK: Cleanup — collection bag + trash
 
     struct CollectedItem: Identifiable {

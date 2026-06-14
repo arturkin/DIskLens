@@ -8,25 +8,31 @@ struct ChartArea: View {
 
     var body: some View {
         @Bindable var model = model
-        ZStack {
-            if model.focus != nil {
-                content
-            } else {
-                EmptyStateView()
-            }
+        VStack(spacing: 0) {
+            // Slim, non-blocking strip: the chart below stays fully interactive
+            // while a scan runs (you keep browsing the previous run until the new
+            // one swaps in on completion).
             if model.isScanning {
-                ScanProgressOverlay()
+                ScanProgressBar()
+                Divider()
             }
-            if model.isLoadingRun {
-                VStack(spacing: 10) {
-                    ProgressView().controlSize(.large)
-                    Text("Loading scan…").foregroundStyle(.secondary)
+            ZStack {
+                if model.focus != nil {
+                    content
+                } else if !model.isScanning {
+                    EmptyStateView()
                 }
-                .padding(24)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            }
-            if case .failed(let message) = model.phase {
-                ErrorOverlay(message: message)
+                if model.isLoadingRun {
+                    VStack(spacing: 10) {
+                        ProgressView().controlSize(.large)
+                        Text("Loading scan…").foregroundStyle(.secondary)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                }
+                if case .failed(let message) = model.phase {
+                    ErrorOverlay(message: message)
+                }
             }
         }
         .frame(minWidth: 560, minHeight: 480)
@@ -215,31 +221,35 @@ private struct EmptyStateView: View {
     }
 }
 
-private struct ScanProgressOverlay: View {
+/// Slim, non-blocking progress strip shown at the top of the detail pane while a
+/// scan runs. Leaves the chart underneath fully usable.
+private struct ScanProgressBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 14) {
-            ProgressView().controlSize(.large)
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
             if case .scanning(let p) = model.phase {
-                Text("\(Format.count(p.filesScanned)) files · \(Format.bytes(p.bytesScanned))")
-                    .font(.headline)
+                Text("Scanning… \(Format.count(p.filesScanned)) files · \(Format.bytes(p.bytesScanned))")
+                    .font(.callout).fontWeight(.medium)
+                    .fixedSize()
                 Text(p.currentPath)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: 420)
+            } else {
+                Text("Authenticating…").font(.callout).foregroundStyle(.secondary)
             }
+            Spacer(minLength: 8)
             if model.canCancelScan {
                 Button("Cancel", role: .cancel) { model.cancelScan() }
-            } else {
-                Text("Authenticating…").font(.caption).foregroundStyle(.secondary)
+                    .controlSize(.small)
             }
         }
-        .padding(28)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .shadow(radius: 20)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
     }
 }
 

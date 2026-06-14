@@ -23,11 +23,17 @@ struct DiskLensApp: App {
         .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Scan Home Folder") {
+                Button("New Scan of Home Folder") {
                     model.startScan(root: FileManager.default.homeDirectoryForCurrentUser)
                 }
-                .keyboardShortcut("r")
+                .keyboardShortcut("n")
                 .disabled(model.isScanning)
+
+                Button("Rescan") {
+                    model.rescanCurrent()
+                }
+                .keyboardShortcut("r")
+                .disabled(!model.canRescan)
             }
         }
 

@@ -36,9 +36,14 @@ project.yml                   XcodeGen spec — the single source of truth for t
 - **`DiskLensCore` is UI-free and is the shared engine** for both the app and the privileged
   helper. All algorithmic work (scan accounting, diff, layouts, serialization, path resolution)
   lives here and is unit-tested. The app and helper are thin shells over it.
-- **Scanning** uses `lstat`/`opendir` and accounts size as `st_blocks * 512` (matches `du`):
-  hard-link dedupe by `(dev,ino)`, symlinks flagged not followed, stops at volume boundaries.
-  Runs off the main actor via `ScanCoordinator`; the finished `FileTree` is immutable & `Sendable`.
+- **Scanning** reads directory entries with `getattrlistbulk(2)` (one syscall per *batch* of
+  entries, not one `lstat` per file — the speed win; an `lstat`/`opendir` path remains as a
+  fallback for filesystems without bulk support, forced via `DISKLENS_NO_BULK`). Size is
+  `ATTR_FILE_ALLOCSIZE` ≈ `st_blocks * 512` (matches `du`): hard-link dedupe by `(dev,ino)`,
+  symlinks flagged not followed, stops at volume boundaries. The root's child subtrees are walked
+  **in parallel** (`DispatchQueue.concurrentPerform`) sharing one lock-guarded inode set, so
+  dedupe stays exact; per-subtree stats merge at the end. Runs off the main actor via
+  `ScanCoordinator`; the finished `FileTree` is immutable & `Sendable`.
 - **Admin scan**: the app launches the bundled `disklens-helper` as root via
   `osascript … with administrator privileges`, polling a side file for progress (the auth prompt
   blocks until done). The helper `chmod 0644`s its outputs so the launching user can read

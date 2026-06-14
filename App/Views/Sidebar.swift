@@ -8,21 +8,33 @@ struct Sidebar: View {
         @Bindable var model = model
         List(selection: $model.selectedRunID) {
             Section("Scan") {
-                Button { model.startScan(root: FileManager.default.homeDirectoryForCurrentUser) } label: {
-                    Label("Home Folder", systemImage: "house")
+                // Starting a scan is an explicit action behind this menu, so
+                // browsing run history never kicks off an (expensive) re-scan.
+                Menu {
+                    Button { model.startScan(root: FileManager.default.homeDirectoryForCurrentUser) } label: {
+                        Label("Home Folder", systemImage: "house")
+                    }
+                    Button(action: chooseFolder) {
+                        Label("Choose Folder…", systemImage: "folder")
+                    }
+                    Divider()
+                    Button { model.startScan(root: URL(filePath: "/")) } label: {
+                        Label("Whole Disk", systemImage: "internaldrive")
+                    }
+                    Button { model.startScan(root: URL(filePath: "/"), mode: .admin) } label: {
+                        Label("Whole Disk (Admin)…", systemImage: "lock.shield")
+                    }
+                } label: {
+                    Label("New Scan…", systemImage: "plus.magnifyingglass")
                 }
-                Button(action: chooseFolder) {
-                    Label("Choose Folder…", systemImage: "folder")
+                .disabled(model.isScanning)
+
+                Button { model.rescanCurrent() } label: {
+                    Label("Rescan", systemImage: "arrow.clockwise")
                 }
-                Button { model.startScan(root: URL(filePath: "/")) } label: {
-                    Label("Whole Disk", systemImage: "internaldrive")
-                }
-                Button { model.startScan(root: URL(filePath: "/"), mode: .admin) } label: {
-                    Label("Whole Disk (Admin)…", systemImage: "lock.shield")
-                }
+                .buttonStyle(.plain)
+                .disabled(!model.canRescan)
             }
-            .buttonStyle(.plain)
-            .disabled(model.isScanning)
 
             Section("History") {
                 if model.runs.isEmpty {
