@@ -67,6 +67,7 @@ final class AppModel {
         self.tree = tree
         self.focusPath = [tree.root]
         self.hovered = nil
+        refreshCompareForCurrentRun()
     }
 
     // MARK: Navigation
@@ -260,6 +261,64 @@ final class AppModel {
         selectedRunID = meta.id
         present(tree: result.tree)
         phase = .idle
+    }
+
+    // MARK: Compare / diff
+
+    var isComparing = false
+    var baselineRunID: UUID?
+    var diff: TreeDiff?
+    var isDiffLoading = false
+
+    var canCompare: Bool { runs.count >= 2 }
+    var baselineRun: RunMetadata? { runs.first { $0.id == baselineRunID } }
+
+    func toggleCompare() {
+        isComparing.toggle()
+        if isComparing {
+            if baselineRunID == nil { baselineRunID = defaultBaselineID() }
+            recomputeDiff()
+        } else {
+            diff = nil
+        }
+    }
+
+    func setBaseline(_ id: UUID) {
+        baselineRunID = id
+        recomputeDiff()
+    }
+
+    /// The next-older run relative to the selected one.
+    private func defaultBaselineID() -> UUID? {
+        guard let current = selectedRunID, let idx = runs.firstIndex(where: { $0.id == current }) else {
+            return nil
+        }
+        return runs[(idx + 1)...].first?.id
+    }
+
+    /// Recomputes compare state when the selected run changes.
+    private func refreshCompareForCurrentRun() {
+        guard isComparing else { return }
+        if baselineRunID == nil || baselineRunID == selectedRunID {
+            baselineRunID = defaultBaselineID()
+        }
+        recomputeDiff()
+    }
+
+    private func recomputeDiff() {
+        guard isComparing, let baselineRunID, let current = tree else { diff = nil; return }
+        isDiffLoading = true
+        diff = nil
+        let store = self.store
+        Task {
+            let baseline = await Task.detached { try? store.loadTree(id: baselineRunID) }.value
+            guard isComparing, self.baselineRunID == baselineRunID else { return }
+            if let baseline {
+                let computed = await Task.detached { DiffEngine.diff(baseline: baseline, current: current) }.value
+                self.diff = computed
+            }
+            isDiffLoading = false
+        }
     }
 
     // MARK: Helpers

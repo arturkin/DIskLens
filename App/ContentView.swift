@@ -10,6 +10,10 @@ struct ContentView: View {
             Sidebar()
         } detail: {
             ChartArea()
+                .inspector(isPresented: $model.isComparing) {
+                    ChangesInspector()
+                        .inspectorColumnWidth(min: 240, ideal: 300, max: 420)
+                }
         }
         .navigationTitle("DiskLens")
         .navigationSubtitle(subtitle)
@@ -25,7 +29,37 @@ struct ContentView: View {
                 .labelsHidden()
                 .disabled(model.focus == nil)
             }
+            ToolbarItemGroup(placement: .automatic) {
+                if model.isComparing, model.canCompare {
+                    Menu {
+                        ForEach(model.runs.filter { $0.id != model.selectedRunID }) { run in
+                            Button {
+                                model.setBaseline(run.id)
+                            } label: {
+                                Label(baselineTitle(run), systemImage: run.id == model.baselineRunID ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Label("Baseline", systemImage: "calendar.badge.clock")
+                    }
+                    .help("Choose the run to compare against")
+                }
+                Button {
+                    model.toggleCompare()
+                } label: {
+                    Label("Compare", systemImage: "arrow.left.arrow.right")
+                }
+                .help("Compare this scan to a previous one")
+                .disabled(!model.canCompare)
+                .symbolVariant(model.isComparing ? .fill : .none)
+            }
         }
+    }
+
+    private func baselineTitle(_ run: RunMetadata) -> String {
+        let name = run.scannedRoot == "/" ? (run.volumeName ?? "Disk")
+            : (run.scannedRoot as NSString).lastPathComponent
+        return "\(name) — \(run.date.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private var subtitle: String {

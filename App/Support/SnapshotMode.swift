@@ -39,6 +39,19 @@ enum SnapshotMode {
             log += "empty=\(render(EmptyMessage(), size: size, to: dir.appending(path: "empty.png")))\n"
         }
 
+        // Compare snapshot: tint the most-recent run against the next same-root run.
+        let store = RunStore()
+        let runs = (try? store.loadIndex()) ?? []
+        if let current = runs.first,
+           let baseline = runs.dropFirst().first(where: { $0.scannedRoot == current.scannedRoot }),
+           let curTree = try? store.loadTree(id: current.id),
+           let baseTree = try? store.loadTree(id: baseline.id) {
+            let diff = DiffEngine.diff(baseline: baseTree, current: curTree)
+            let tint = DeltaTint.make(diff.deltaByCurrentNode)
+            log += "compare: \(diff.changes.count) changes, net \(diff.totalDelta) bytes, +\(diff.addedCount)/-\(diff.removedCount)\n"
+            log += "compare=\(render(SunburstView(focus: curTree.root, hovered: nil, colorOverride: tint, onHover: { _ in }, onSelect: { _ in }, onBack: {}), size: size, to: dir.appending(path: "compare.png")))\n"
+        }
+
         try? log.write(to: dir.appending(path: "log.txt"), atomically: true, encoding: .utf8)
         NSApplication.shared.terminate(nil)
     }

@@ -37,6 +37,10 @@ struct ChartArea: View {
     @ViewBuilder
     private var content: some View {
         VStack(spacing: 0) {
+            if model.isComparing {
+                CompareSummaryBar()
+                Divider()
+            }
             BreadcrumbBar()
             Divider()
             if let focus = model.focus {
@@ -59,11 +63,17 @@ struct ChartContent: View {
     @Environment(AppModel.self) private var model
     let focus: FileNode
 
+    /// Delta tint closure when comparing, else nil (palette coloring).
+    private var tint: ((FileNode?) -> Color)? {
+        guard model.isComparing, let deltas = model.diff?.deltaByCurrentNode else { return nil }
+        return DeltaTint.make(deltas)
+    }
+
     var body: some View {
         switch model.vizKind {
         case .sunburst:
             SunburstView(
-                focus: focus, hovered: model.hovered,
+                focus: focus, hovered: model.hovered, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
@@ -71,7 +81,7 @@ struct ChartContent: View {
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .pie:
             SunburstView(
-                focus: focus, hovered: model.hovered, maxDepth: 1,
+                focus: focus, hovered: model.hovered, maxDepth: 1, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) },
                 onBack: { model.goUp() }
@@ -79,7 +89,7 @@ struct ChartContent: View {
             .contextMenu { ChartNodeMenu(node: model.hovered) }
         case .treemap:
             TreemapView(
-                focus: focus, hovered: model.hovered,
+                focus: focus, hovered: model.hovered, colorOverride: tint,
                 onHover: { model.hovered = $0 },
                 onSelect: { model.drill(into: $0) }
             )

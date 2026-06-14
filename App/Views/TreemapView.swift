@@ -6,6 +6,7 @@ import DiskLensCore
 struct TreemapView: View {
     let focus: FileNode
     var hovered: FileNode?
+    var colorOverride: ((FileNode?) -> Color)?
     var onHover: (FileNode?) -> Void
     var onSelect: (FileNode) -> Void
 
@@ -21,7 +22,7 @@ struct TreemapView: View {
                     let rect = CGRect(x: tile.rect.x, y: tile.rect.y,
                                       width: tile.rect.width, height: tile.rect.height)
                     let path = Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 2)
-                    let base = colors[tile.id] ?? .gray
+                    let base = colorOverride?(tile.node) ?? colors[tile.id] ?? .gray
                     let isHovered = tile.node.map { ObjectIdentifier($0) == hoveredID } ?? false
                     ctx.fill(path, with: .color(base.opacity(isHovered ? 1.0 : 0.92)))
                     ctx.stroke(path, with: .color(Color(nsColor: .windowBackgroundColor)),

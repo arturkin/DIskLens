@@ -38,6 +38,8 @@ struct SunburstView: View {
     let focus: FileNode
     var hovered: FileNode?
     var maxDepth: Int = 5
+    /// When set, overrides palette coloring (used for delta tinting in compare mode).
+    var colorOverride: ((FileNode?) -> Color)?
     var onHover: (FileNode?) -> Void
     var onSelect: (FileNode) -> Void
     var onBack: () -> Void
@@ -77,7 +79,7 @@ struct SunburstView: View {
             let path = annulus(
                 center: g.center, inner: g.inner(seg.depth), outer: g.outer(seg.depth),
                 start: seg.startAngle, end: seg.endAngle)
-            let base = colors[seg.id] ?? .gray
+            let base = colorOverride?(seg.node) ?? colors[seg.id] ?? .gray
             let isHovered = seg.node.map { ObjectIdentifier($0) == hoveredID } ?? false
             ctx.fill(path, with: .color(isHovered ? base.opacity(1.0) : base.opacity(0.92)))
             ctx.stroke(path, with: .color(Color(nsColor: .windowBackgroundColor)),
